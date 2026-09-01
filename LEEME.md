@@ -31,6 +31,17 @@ y arrastrá la carpeta vieja (donde está `miniliga-whatsapp.exe`). Copia tu
 `config.json` y tu `sesion-whatsapp/`, así el bot arranca sin QR y con el mismo
 grupo de siempre. Recién ahí borrá la carpeta vieja.
 
+## La cuenta de Steam del bot
+
+Mientras el bot corre, `alvearmybot` figura conectada y **jugando a Dota 2**: es
+la forma en que Valve reparte la información de qué está haciendo cada amigo. No
+hay ningún juego corriendo de verdad. Si molesta, se apaga poniendo
+`"steam_en_dota": false` en `config.json`, pero entonces se pierde el "en partida
+con tal héroe".
+
+Cada jugador tiene que tenerlo de amigo, y en Steam → Ajustes → Privacidad, los
+**detalles del juego** en Público o Solo amigos.
+
 ## Actualizaciones
 
 **No hay que hacer nada.** Cada 15 minutos el bot mira si hay una versión nueva;

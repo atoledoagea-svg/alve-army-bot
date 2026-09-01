@@ -16,6 +16,7 @@ const SteamUser = require("steam-user");
 
 const STEAM64_OFFSET = 76561197960265728n;
 const APPID_DOTA = 570;
+const APPID_DOTA_NUM = 570;
 
 // Estados que publica Dota 2 en su rich presence
 const EN_PARTIDA = ["#DOTA_RP_PLAYING_AS", "#DOTA_RP_HERO_SELECTION", "#DOTA_RP_STRATEGY_TIME",
@@ -95,7 +96,9 @@ class PresenciaSteam {
 
       cliente.on("loggedOn", () => {
         cliente.setPersona(SteamUser.EPersonaState.Online);
-        cliente.gamesPlayed([]);
+        // Valve reparte la presencia de Dota entre los que estan en el juego:
+        // con la cuenta "sin jugar" hay veces que no llega nada.
+        cliente.gamesPlayed(this.cfg.steam_en_dota === false ? [] : [APPID_DOTA_NUM]);
         this.listo = true;
         this.log("steam: cuenta bot conectada");
         resolve(true);
@@ -133,6 +136,13 @@ class PresenciaSteam {
    * @param {Array} jugadores  [{account_id, nombre}]
    * @returns {Map} accountId -> {nombre, situacion: 'partida'|'buscando'|'menu', heroe, partida}
    */
+  /** Escribe un aviso solo cuando cambia, para no llenar la consola. */
+  avisarUnaVez(clave, texto) {
+    if (this.ultimoAviso === clave) return;
+    this.ultimoAviso = clave;
+    this.log(texto);
+  }
+
   /** Como esta la amistad con cada jugador de la liga. */
   amistades(jugadores) {
     const salida = new Map();
@@ -158,13 +168,19 @@ class PresenciaSteam {
     const rp = await new Promise((resolve) => {
       try {
         this.cliente.requestRichPresence(APPID_DOTA, steamids, (err, res) => {
+          if (err) this.avisarUnaVez("fallo", `steam: la consulta de presencia fallo (${err.message})`);
           resolve(err ? null : res);
         });
       } catch (e) {
+        this.avisarUnaVez("excepcion", `steam: no pude consultar la presencia (${e.message})`);
         resolve(null);
       }
     });
-    if (!rp || !rp.users) return salida;
+    if (!rp || !rp.users) {
+      this.avisarUnaVez("vacio", "steam: la consulta anduvo pero Steam no devolvio a nadie");
+      return salida;
+    }
+    this.avisarUnaVez("ok", `steam: Steam devolvio datos de ${Object.keys(rp.users).length} jugador(es)`);
 
     if (!this.mostreCrudo) {
       // una sola vez: dejar en el log lo que contesta Steam, para poder mirarlo
