@@ -109,6 +109,18 @@ class PresenciaSteam {
         }
       });
 
+      // y las que hayan llegado mientras el bot estaba apagado
+      cliente.on("friendsList", () => {
+        let pendientes = 0;
+        for (const [steamid, relacion] of Object.entries(cliente.myFriends || {})) {
+          if (relacion === SteamUser.EFriendRelationship.RequestRecipient) {
+            cliente.addFriend(steamid);
+            pendientes++;
+          }
+        }
+        if (pendientes) this.log(`steam: acepte ${pendientes} invitacion(es) que estaban esperando`);
+      });
+
       cliente.on("error", (e) => {
         this.log(`steam: error de conexion (${e.message})`);
         if (!this.listo) resolve(false);
