@@ -28,6 +28,7 @@ const SESION_DIR = path.join(BASE, "sesion-whatsapp");
 const RECAP_PATH = path.join(BASE, "ultimo-recap.json");
 const PUNTERO_PATH = path.join(BASE, "punteros.json");
 const PREMIOS_PATH = path.join(BASE, "ultimo-premio.json");
+const ORDEN_PATH = path.join(BASE, "ultima-orden.json");
 const QUIEN_PATH = path.join(BASE, "quien-es-quien.json");
 
 const LOBBY_PRIVADA = 1;
@@ -755,6 +756,58 @@ async function revisarPremios(cfg, grupoId) {
   return true;
 }
 
+/** Mira si desde la web pidieron que el bot se actualice ya.
+ *
+ * Sirve para no depender de que alguien este delante de esa PC: se sube el
+ * cambio, se marca la orden, y el bot la toma en la vuelta siguiente.
+ */
+async function revisarOrden(cfg, grupoId, callado) {
+  let orden;
+  try {
+    orden = await traerJSON(`${cfg.web_publica}/orden.json`);
+  } catch (e) {
+    return false; // no hay ordenes publicadas
+  }
+  const marca = orden && orden.actualizar;
+  if (!marca) return false;
+
+  let ultima = null;
+  try {
+    ultima = JSON.parse(fs.readFileSync(ORDEN_PATH, "utf8")).actualizar;
+  } catch {}
+  const anotar = () => {
+    try {
+      fs.writeFileSync(ORDEN_PATH, JSON.stringify({ actualizar: marca }), "utf8");
+    } catch (e) {
+      log(`no pude anotar la orden (${e.message})`);
+    }
+  };
+  if (ultima === marca) return false;
+  anotar();
+  if (callado || ultima === null) return false; // la primera vez solo se anota
+
+  log("orden desde la web: reviso si hay version nueva ahora mismo");
+  let hubo = false;
+  try {
+    hubo = await actualizador.revisar(BASE, log);
+  } catch (e) {
+    log(`la revision pedida fallo (${e.message})`);
+    return false;
+  }
+  if (!hubo) {
+    log("orden desde la web: ya estaba en la ultima version");
+    return false;
+  }
+  if (grupoId) {
+    try {
+      const activo = await asegurarConexion(cfg);
+      await activo.sendMessage(grupoId, { text: "\u{1F527} Me actualizo un momento, ya vuelvo." });
+    } catch {}
+  }
+  actualizador.reiniciar(BASE);
+  return true;
+}
+
 /** Escucha el grupo: si preguntan quien juega, contesta. */
 function escucharPreguntas(sock, cfg, grupoId) {
   const disparadores = ["!jugando", "!ingame", "quien esta jugando", "quien juega", "quienes juegan"];
@@ -1241,6 +1294,7 @@ async function pasada(cfg, grupoId, vistas, ajustes, primera) {
   if (primera) {
     guardarVistas(vistas);
     await revisarPuntero(cfg, estado, grupoId, true); // solo anotar, sin cantar
+    await revisarOrden(cfg, grupoId, true);
     if (!fs.existsSync(PREMIOS_PATH)) {
       // primera vez: anota el mes publicado sin cantarlo, para no revivir premios viejos
       try {
@@ -1277,6 +1331,7 @@ async function pasada(cfg, grupoId, vistas, ajustes, primera) {
   guardarVistas(vistas);
   avisos += await revisarPuntero(cfg, estado, grupoId, false);
   if (await revisarPremios(cfg, grupoId)) avisos++;
+  await revisarOrden(cfg, grupoId, false);
   return avisos;
 }
 
