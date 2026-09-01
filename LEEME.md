@@ -24,6 +24,13 @@ Tabla y estadísticas: <https://miniliga-dota2.vercel.app>
 
 Listo. Dejalo abierto y minimizado.
 
+## Si ya venías usando el .exe
+
+No pierdas la sesión: después del paso 4, doble clic en **MIGRAR-DESDE-EXE.bat**
+y arrastrá la carpeta vieja (donde está `miniliga-whatsapp.exe`). Copia tu
+`config.json` y tu `sesion-whatsapp/`, así el bot arranca sin QR y con el mismo
+grupo de siempre. Recién ahí borrá la carpeta vieja.
+
 ## Actualizaciones
 
 **No hay que hacer nada.** Cada 6 horas el bot mira si hay una versión nueva;
