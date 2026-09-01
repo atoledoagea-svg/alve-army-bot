@@ -39,6 +39,9 @@ const dormir = (ms) => new Promise((r) => setTimeout(r, ms));
 
 // ------------------------------------------------------------------ config
 
+/** Valores de ejemplo que quedan si nadie completo config.json. */
+const esPlantilla = (v) => typeof v === "string" && /^(TU_|LA_CLAVE)/.test(v.trim());
+
 function cargarConfig() {
   if (!fs.existsSync(CONFIG_PATH)) {
     console.error(`\nNo encuentro config.json al lado del programa (${CONFIG_PATH}).`);
@@ -51,9 +54,20 @@ function cargarConfig() {
   cfg.puntos_derrota = cfg.puntos_derrota ?? -25;
   cfg.avisar_entradas = cfg.avisar_entradas !== false; // avisar cuando alguien abre el Dota
   cfg.minutos_reaviso = cfg.minutos_reaviso || 45;     // no repetir el aviso antes de esto
-  if (!cfg.api_key) {
-    console.error("\nFalta 'api_key' en config.json.");
+  if (!cfg.api_key || esPlantilla(cfg.api_key)) {
+    console.error(
+      "\n  FALTA COMPLETAR LA CLAVE DE STEAM\n\n" +
+      "  Abri con el Bloc de notas:\n    " + CONFIG_PATH + "\n" +
+      '  y cambia "TU_STEAM_API_KEY" por la clave que te paso Agus.\n\n' +
+      "  Sin eso Steam contesta 403 a todo y el bot no ve ninguna partida.\n"
+    );
     process.exit(1);
+  }
+  // lo que quedo sin completar se ignora, en vez de fallar a cada rato
+  if (esPlantilla(cfg.admin_key)) cfg.admin_key = "";
+  if (esPlantilla(cfg.steam_usuario) || esPlantilla(cfg.steam_password)) {
+    cfg.steam_usuario = "";
+    cfg.steam_password = "";
   }
   return cfg;
 }

@@ -35,9 +35,11 @@ if errorlevel 1 (
 if not exist config.json (
   copy config.ejemplo.json config.json >nul
   echo.
-  echo  Se creo config.json: abrilo con el Bloc de notas y pegale las claves
-  echo  que te paso Agus antes de arrancar el bot.
+  echo  ATENCION: te abro config.json en el Bloc de notas.
+  echo  Pegale las claves que te paso Agus y guardalo ^(Ctrl+G^).
+  echo  Sin eso el bot no arranca.
   echo.
+  start /wait notepad config.json
 )
 
 echo.
