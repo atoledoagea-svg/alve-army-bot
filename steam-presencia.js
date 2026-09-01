@@ -133,6 +133,22 @@ class PresenciaSteam {
    * @param {Array} jugadores  [{account_id, nombre}]
    * @returns {Map} accountId -> {nombre, situacion: 'partida'|'buscando'|'menu', heroe, partida}
    */
+  /** Como esta la amistad con cada jugador de la liga. */
+  amistades(jugadores) {
+    const salida = new Map();
+    if (!this.listo || !this.cliente) return salida;
+    const amigos = this.cliente.myFriends || {};
+    for (const j of jugadores) {
+      const rel = amigos[aSteam64(j.account_id)];
+      let estado = "no";
+      if (rel === SteamUser.EFriendRelationship.Friend) estado = "amigo";
+      else if (rel === SteamUser.EFriendRelationship.RequestRecipient) estado = "pendiente";
+      else if (rel === SteamUser.EFriendRelationship.RequestInitiator) estado = "invitado";
+      salida.set(j.account_id, { nombre: j.nombre, estado });
+    }
+    return salida;
+  }
+
   async consultar(jugadores) {
     const salida = new Map();
     if (!this.listo || !this.cliente) return salida;

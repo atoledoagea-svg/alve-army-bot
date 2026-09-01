@@ -588,6 +588,31 @@ async function textoJugando(cfg) {
   );
 }
 
+/** Quien tiene agregado al bot de Steam y quien no. */
+async function textoAmigos(cfg) {
+  if (!presencia || !presencia.listo) {
+    return "\u{1F50C} La cuenta de Steam del bot no esta conectada, asi que no " +
+           "puedo ver las amistades.";
+  }
+  const estado = await traerEstado(cfg);
+  const amistades = presencia.amistades(estado.jugadores);
+  const visibles = await presencia.consultar(estado.jugadores);
+
+  const grupos = { amigo: [], pendiente: [], no: [] };
+  for (const info of amistades.values()) {
+    const clave = info.estado === "invitado" ? "pendiente" : info.estado;
+    (grupos[clave] || grupos.no).push(info.nombre);
+  }
+  const partes = [`\u{1F464} Amistades del bot (${grupos.amigo.length}/${amistades.size})`];
+  if (grupos.amigo.length) partes.push(`\u2705 Ya lo agregaron: ${grupos.amigo.sort().join(", ")}`);
+  if (grupos.pendiente.length) partes.push(`\u23F3 Invitacion sin aceptar: ${grupos.pendiente.sort().join(", ")}`);
+  if (grupos.no.length) partes.push(`\u274C Falta que lo agreguen: ${grupos.no.sort().join(", ")}`);
+  partes.push(`\u{1F441}\uFE0F Ahora mismo puedo ver a ${visibles.size} jugando. ` +
+              "Si alguien es amigo y aun asi no lo veo, tiene los detalles del " +
+              "juego en privado (Steam > Ajustes > Privacidad).");
+  return partes.join("\n\n");
+}
+
 /** Escucha el grupo: si preguntan quien juega, contesta. */
 function escucharPreguntas(sock, cfg, grupoId) {
   const disparadores = ["!jugando", "!ingame", "quien esta jugando", "quien juega", "quienes juegan"];
@@ -618,6 +643,9 @@ function escucharPreguntas(sock, cfg, grupoId) {
         } else if (texto.startsWith("!frase")) {
           log(`comando: ${texto}`);
           await sock.sendMessage(grupoId, { text: await comandoFrase(cfg, texto, autor) });
+        } else if (texto.startsWith("!amigos")) {
+          log("comando: !amigos");
+          await sock.sendMessage(grupoId, { text: await textoAmigos(cfg) });
         } else if (texto.startsWith("!ayuda") || texto.startsWith("!comandos")) {
           await sock.sendMessage(grupoId, { text: AYUDA });
         } else if (disparadores.some((d) => texto.includes(d))) {
@@ -756,6 +784,7 @@ const AYUDA =
   "*!jugando* - quien tiene el Dota abierto\n" +
   "*!frase* algo - agregar una cargada\n" +
   "*!lobby* - crear la lobby de la liga\n" +
+  "*!amigos* - quien agrego al bot de Steam\n" +
   "*!ayuda* - esta lista";
 
 // ------------------------------------------------------------------ lobbys de la liga
@@ -1145,7 +1174,7 @@ async function main() {
     grupoId = await elegirGrupo(sock, cfg);
     log(`avisare en el grupo: ${cfg.grupo_nombre || grupoId}`);
     escucharPreguntas(sock, cfg, grupoId);
-    log('comandos del grupo: !tabla, !yo, !soy, !jugando, !frase, !lobby, !ayuda');
+    log('comandos del grupo: !tabla, !yo, !soy, !jugando, !frase, !lobby, !amigos, !ayuda');
   } else {
     log("MODO PRUEBA: no se conecta a WhatsApp, solo muestra los avisos");
   }
