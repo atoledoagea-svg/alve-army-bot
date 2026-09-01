@@ -453,6 +453,35 @@ async function enJuego(cfg, estado) {
 }
 
 let vistosPorSteam = -1; // para no repetir el mismo aviso cada vuelta
+let avisoWeb = null;     // idem, para el estado del envio a la web
+
+/** Le manda a la web quien esta en partida y con que heroe. */
+async function publicarPresencia(cfg, actual) {
+  let resultado;
+  try {
+    const r = await fetch(`${cfg.web_publica}/api/presencia`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        clave: cfg.admin_key,
+        jugadores: [...actual.values()].map((i) => ({
+          nombre: i.nombre, situacion: i.situacion, heroe: i.heroe,
+        })),
+      }),
+    });
+    if (r.ok) resultado = "ok";
+    else if (r.status === 403) resultado = "clave-mal";
+    else resultado = `error-${r.status}`;
+  } catch (e) {
+    resultado = "sin-internet";
+  }
+  if (resultado === avisoWeb) return; // no repetir lo mismo cada vuelta
+  avisoWeb = resultado;
+  if (resultado === "ok") log(`web: le mande la presencia de ${actual.size} jugador(es)`);
+  else if (resultado === "clave-mal") log("web: rechazo la presencia, el admin_key de config.json no es el correcto");
+  else if (resultado === "sin-internet") log("web: no pude avisarle la presencia (sin conexion?)");
+  else log(`web: no acepto la presencia (${resultado})`);
+}
 
 /** Con la cuenta de Steam bot: avisa quien ENTRO EN PARTIDA (dato exacto). */
 async function revisarPartidas(cfg, estado, grupoId) {
@@ -466,16 +495,11 @@ async function revisarPartidas(cfg, estado, grupoId) {
   // le pasamos el estado fino a la web, para que muestre con que heroe juega cada uno.
   // Se publica aunque no veamos a nadie: asi la web sabe que el bot esta vivo.
   if (cfg.admin_key) {
-    fetch(`${cfg.web_publica}/api/presencia`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        clave: cfg.admin_key,
-        jugadores: [...actual.values()].map((i) => ({
-          nombre: i.nombre, situacion: i.situacion, heroe: i.heroe,
-        })),
-      }),
-    }).catch(() => {});
+    publicarPresencia(cfg, actual);
+  } else if (avisoWeb !== "sin-clave") {
+    avisoWeb = "sin-clave";
+    log("web: falta admin_key en config.json, asi que la web no va a poder " +
+        "mostrar con que heroe juega cada uno");
   }
 
   const enPartida = [...actual.values()].filter((i) => i.situacion === "partida").length;
