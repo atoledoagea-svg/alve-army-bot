@@ -1,0 +1,14 @@
+# claves y sesiones: nunca se suben
+config.json
+sesion-whatsapp/
+sesion-steam.json
+
+# estado local del bot
+partidas-vistas.json
+ultimo-recap.json
+quien-es-quien.json
+frases-cache.json
+
+node_modules/
+*.exe
+*.log

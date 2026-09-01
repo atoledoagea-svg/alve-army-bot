@@ -1,0 +1,10 @@
+{
+  "api_key": "TU_STEAM_API_KEY",
+  "web_publica": "https://miniliga-dota2.vercel.app",
+  "intervalo_seg": 180,
+  "steam_usuario": "",
+  "steam_password": "",
+  "admin_key": "LA_CLAVE_DE_ADMIN_DE_LA_LIGA",
+  "avisar_entradas": true,
+  "minutos_reaviso": 45
+}

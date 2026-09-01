@@ -1,0 +1,35 @@
+{
+  "name": "alve-army-bot",
+  "version": "1.0.0",
+  "description": "Bot de la LIGA ALVE ARMY: avisa al grupo de WhatsApp los resultados de cada partida",
+  "main": "bot.js",
+  "bin": "bot.js",
+  "scripts": {
+    "start": "node bot.js"
+  },
+  "dependencies": {
+    "@whiskeysockets/baileys": "^6.7.9",
+    "dota2": "^7.0.3",
+    "qrcode-terminal": "^0.12.0",
+    "steam-user": "^5.3.0"
+  },
+  "devDependencies": {
+    "@yao-pkg/pkg": "^6.22.0"
+  },
+  "pkg": {
+    "assets": [
+      "node_modules/@doctormckay/steam-crypto/**/*.pem",
+      "node_modules/steam-user/**/*.proto",
+      "node_modules/steam-user/**/*.json",
+      "node_modules/@doctormckay/**/*.json",
+      "node_modules/lzma/src/**/*.js",
+      "node_modules/steam-resources/**/*",
+      "node_modules/steam/node_modules/steam-resources/**/*",
+      "node_modules/dota2/**/*",
+      "node_modules/steam/**/*.json"
+    ],
+    "scripts": [
+      "node_modules/lzma/src/**/*.js"
+    ]
+  }
+}
