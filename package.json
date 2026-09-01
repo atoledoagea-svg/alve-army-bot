@@ -5,7 +5,8 @@
   "main": "bot.js",
   "bin": "bot.js",
   "scripts": {
-    "start": "node bot.js"
+    "start": "node bot.js",
+    "postinstall": "node arreglar-steam-resources.js"
   },
   "dependencies": {
     "@whiskeysockets/baileys": "^6.7.9",
@@ -34,6 +35,12 @@
     ]
   },
   "overrides": {
+    "steam": {
+      "steam-resources": "file:vendor/steam-resources"
+    },
+    "dota2": {
+      "steam-resources": "file:vendor/steam-resources"
+    },
     "steam-resources": {
       ".": "file:vendor/steam-resources",
       "protobufjs": "^5.0.3"
