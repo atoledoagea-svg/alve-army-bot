@@ -452,6 +452,8 @@ async function enJuego(cfg, estado) {
     .sort();
 }
 
+let vistosPorSteam = -1; // para no repetir el mismo aviso cada vuelta
+
 /** Con la cuenta de Steam bot: avisa quien ENTRO EN PARTIDA (dato exacto). */
 async function revisarPartidas(cfg, estado, grupoId) {
   if (!presencia || !presencia.listo) return false;
@@ -461,8 +463,9 @@ async function revisarPartidas(cfg, estado, grupoId) {
   } catch (e) {
     return false;
   }
-  // le pasamos el estado fino a la web, para que muestre con que heroe juega cada uno
-  if (cfg.admin_key && actual.size) {
+  // le pasamos el estado fino a la web, para que muestre con que heroe juega cada uno.
+  // Se publica aunque no veamos a nadie: asi la web sabe que el bot esta vivo.
+  if (cfg.admin_key) {
     fetch(`${cfg.web_publica}/api/presencia`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -473,6 +476,14 @@ async function revisarPartidas(cfg, estado, grupoId) {
         })),
       }),
     }).catch(() => {});
+  }
+
+  const enPartida = [...actual.values()].filter((i) => i.situacion === "partida").length;
+  if (actual.size !== vistosPorSteam) {
+    vistosPorSteam = actual.size;
+    log(`steam: veo a ${actual.size} de ${estado.jugadores.length} jugadores ` +
+        `(${enPartida} en partida). Los que faltan no agregaron al bot ` +
+        `o tienen los detalles del juego en privado.`);
   }
 
   const entraron = presencia.novedades(actual);
