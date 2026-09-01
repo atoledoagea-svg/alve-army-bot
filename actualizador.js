@@ -11,7 +11,10 @@ const SALIDA_ACTUALIZADO = 42;      // el .bat ve este codigo y vuelve a arranca
 
 function correr(cmd, args, cwd) {
   return new Promise((listo) => {
-    execFile(cmd, args, { cwd, shell: true, timeout: 120000 }, (err, out) =>
+    // npm en Windows es un .cmd, necesita shell; git no.
+    const conShell = process.platform === "win32" && cmd === "npm";
+    const exe = conShell ? "npm.cmd" : cmd;
+    execFile(exe, args, { cwd, shell: conShell, timeout: 180000 }, (err, out) =>
       listo(err ? null : String(out).trim())
     );
   });
