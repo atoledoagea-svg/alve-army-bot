@@ -7,7 +7,15 @@
  * API publica, asi que hasta ahora habia que cargarlas a mano en /admin.
  */
 
-const Dota2 = require("dota2");
+// La libreria de Dota se carga recien cuando hace falta: si en alguna PC no
+// se instalo bien, el bot igual arranca y todo lo demas sigue andando; lo unico
+// que se pierde es poder crear lobbys desde el grupo.
+let Dota2 = null;
+function cargarDota2() {
+  if (Dota2) return Dota2;
+  Dota2 = require("dota2");
+  return Dota2;
+}
 
 const STEAM64_OFFSET = 76561197960265728n;
 const idDeCuenta = (steamid) => Number(BigInt(String(steamid)) - STEAM64_OFFSET);
@@ -26,7 +34,7 @@ function claveAlAzar() {
 class LobbyDota {
   constructor(clienteSteam, log) {
     this.log = log;
-    this.dota = new Dota2.Dota2Client(clienteSteam, false, false);
+    this.dota = new (cargarDota2().Dota2Client)(clienteSteam, false, false);
     this.listo = false;
     this.lobbyActual = null;   // {nombre, clave, creada}
     this.alTerminar = null;    // callback con el resultado

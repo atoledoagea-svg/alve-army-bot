@@ -1,0 +1,19 @@
+{
+  "name": "steam-resources",
+  "version": "1.2.0",
+  "description": "Steam resources for Node.js",
+  "dependencies": {
+    "bytebuffer": "^5.0",
+    "csv-parse": "^4.0.1",
+    "protobufjs": "^5.0.3"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/seishun/node-steam-resources"
+  },
+  "keywords": [
+    "steam"
+  ],
+  "author": "Nikolai Vavilov <vvnicholas@gmail.com>",
+  "license": "MIT"
+}

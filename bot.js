@@ -735,7 +735,12 @@ async function avisarResultadoALaLiga(cfg, resultado) {
 async function prepararLobby(cfg, grupoId) {
   if (!presencia || !presencia.listo || !presencia.cliente) return null;
   if (!lobby) {
-    lobby = new LobbyDota(presencia.cliente, log);
+    try {
+      lobby = new LobbyDota(presencia.cliente, log);
+    } catch (e) {
+      log(`lobby: no pude usar la libreria de Dota (${e.message}); el resto sigue funcionando`);
+      return null;
+    }
     lobby.alTerminar = async (resultado) => {
       const aviso = await avisarResultadoALaLiga(cfg, resultado);
       const texto =
