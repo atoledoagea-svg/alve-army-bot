@@ -33,7 +33,7 @@ grupo de siempre. Recién ahí borrá la carpeta vieja.
 
 ## Actualizaciones
 
-**No hay que hacer nada.** Cada 6 horas el bot mira si hay una versión nueva;
+**No hay que hacer nada.** Cada 15 minutos el bot mira si hay una versión nueva;
 si la hay, la baja y se reinicia solo (avisa al grupo "me actualizo un momento").
 Si querés forzarla en el momento, cerrá el bot y abrí **ACTUALIZAR.bat**.
 

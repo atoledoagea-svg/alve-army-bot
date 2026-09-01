@@ -6,7 +6,8 @@ const { execFile } = require("child_process");
 const path = require("path");
 const fs = require("fs");
 
-const CADA_MS = 6 * 60 * 60 * 1000; // cada 6 horas
+const CADA_MS = 15 * 60 * 1000; // cada 15 minutos: un fetch es de unos pocos KB
+const PRIMERA_MS = 60 * 1000;   // y una primera revision al minuto de arrancar
 const SALIDA_ACTUALIZADO = 42;      // el .bat ve este codigo y vuelve a arrancar
 
 function correr(cmd, args, cwd) {
@@ -59,8 +60,8 @@ function vigilar(dir, log, antesDeSalir) {
   if (process.pkg) return; // el .exe no se actualiza solo
   hayGit(dir).then((si) => {
     if (!si) return log("actualizacion: esta carpeta no es un clon del repo, no me actualizo solo");
-    log("actualizacion: activada (reviso cada 6 horas)");
-    setInterval(async () => {
+    log("actualizacion: activada (reviso cada 15 minutos)");
+    const mirar = async () => {
       try {
         if (!(await revisar(dir, log))) return;
         log("actualizacion: lista. Me reinicio (la sesion de WhatsApp se mantiene)");
@@ -69,7 +70,9 @@ function vigilar(dir, log, antesDeSalir) {
       } catch (e) {
         log(`actualizacion: fallo la revision (${e.message})`);
       }
-    }, CADA_MS).unref();
+    };
+    setTimeout(mirar, PRIMERA_MS).unref();
+    setInterval(mirar, CADA_MS).unref();
   });
 }
 
