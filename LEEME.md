@@ -56,6 +56,7 @@ Para que arranque cuando prendés la PC: doble clic en `instalar-inicio-automati
 | `!soy <nombre>` | Te vincula con tu jugador de la liga |
 | `!frase <texto>` | Suma una frase al bot |
 | `!lobby` | Crea una lobby privada (si está la cuenta de Steam) |
+| `!puntero` | Quién va primero en cada tabla y con cuántos puntos |
 | `!amigos` | Quién de la liga agregó al bot de Steam y quién no |
 | `!ayuda` | La lista completa |
 

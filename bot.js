@@ -26,6 +26,7 @@ const CONFIG_PATH = path.join(BASE, "config.json");
 const VISTO_PATH = path.join(BASE, "partidas-vistas.json");
 const SESION_DIR = path.join(BASE, "sesion-whatsapp");
 const RECAP_PATH = path.join(BASE, "ultimo-recap.json");
+const PUNTERO_PATH = path.join(BASE, "punteros.json");
 const QUIEN_PATH = path.join(BASE, "quien-es-quien.json");
 
 const LOBBY_PRIVADA = 1;
@@ -613,6 +614,85 @@ async function textoAmigos(cfg) {
   return partes.join("\n\n");
 }
 
+const TABLAS = [
+  { clave: "liga", etiqueta: "LIGA", icono: "\u2694\uFE0F", que: "lobbys" },
+  { clave: "solo", etiqueta: "SOLO", icono: "\u{1F3AF}", que: "rankeds del mes" },
+];
+
+const leerPunteros = () => {
+  try {
+    return JSON.parse(fs.readFileSync(PUNTERO_PATH, "utf8"));
+  } catch {
+    return {};
+  }
+};
+const guardarPunteros = (v) => {
+  try {
+    fs.writeFileSync(PUNTERO_PATH, JSON.stringify(v), "utf8");
+  } catch (e) {
+    log(`no pude guardar los punteros (${e.message})`);
+  }
+};
+
+/** Quien va primero en una tabla, con quienes le empatan y a cuanto del segundo. */
+function puntero(estado, clave) {
+  const orden = [...estado.jugadores]
+    .sort((a, b) => b[clave] - a[clave] || a.nombre.localeCompare(b.nombre));
+  if (!orden.length) return null;
+  const arriba = orden[0][clave];
+  const empatados = orden.filter((j) => j[clave] === arriba).map((j) => j.nombre);
+  const siguiente = orden.find((j) => j[clave] < arriba);
+  return {
+    nombre: orden[0].nombre,
+    puntos: arriba,
+    empatados,
+    ventaja: siguiente ? arriba - siguiente[clave] : null,
+  };
+}
+
+/** Una linea contando quien va arriba en cada tabla. */
+function textoPuntero(estado) {
+  const lineas = ["\u{1F451} *Punteros de la liga*", ""];
+  for (const t of TABLAS) {
+    const p = puntero(estado, t.clave);
+    if (!p) continue;
+    const quien = p.empatados.length > 1
+      ? `${p.empatados.join(" y ")} empatados`
+      : p.nombre;
+    const cola = p.empatados.length > 1 ? ""
+      : p.ventaja ? ` (${p.ventaja} de ventaja)` : "";
+    lineas.push(`${t.icono} *${t.etiqueta}* (${t.que}): ${quien} con ${p.puntos} pts${cola}`);
+  }
+  return lineas.join("\n");
+}
+
+/** Si cambio el que va primero, lo canta en el grupo. */
+async function revisarPuntero(cfg, estado, grupoId, callado) {
+  const previos = leerPunteros();
+  const nuevos = {};
+  const avisos = [];
+  for (const t of TABLAS) {
+    const p = puntero(estado, t.clave);
+    if (!p) continue;
+    nuevos[t.clave] = { nombre: p.nombre, puntos: p.puntos };
+    const antes = previos[t.clave];
+    if (callado || !antes || antes.nombre === p.nombre) continue;
+    const quien = p.empatados.length > 1 ? p.empatados.join(" y ") : p.nombre;
+    avisos.push(
+      `\u{1F451} *NUEVO PUNTERO DE ${t.etiqueta}*: ${quien} con ${p.puntos} pts\n` +
+      `Le saco el puesto a ${antes.nombre} (${antes.puntos} pts)`);
+  }
+  guardarPunteros(nuevos);
+  for (const texto of avisos) {
+    log(texto.replace(/\n/g, " | "));
+    if (grupoId) {
+      const activo = await asegurarConexion(cfg);
+      await activo.sendMessage(grupoId, { text: texto });
+    }
+  }
+  return avisos.length;
+}
+
 /** Escucha el grupo: si preguntan quien juega, contesta. */
 function escucharPreguntas(sock, cfg, grupoId) {
   const disparadores = ["!jugando", "!ingame", "quien esta jugando", "quien juega", "quienes juegan"];
@@ -643,6 +723,9 @@ function escucharPreguntas(sock, cfg, grupoId) {
         } else if (texto.startsWith("!frase")) {
           log(`comando: ${texto}`);
           await sock.sendMessage(grupoId, { text: await comandoFrase(cfg, texto, autor) });
+        } else if (texto.startsWith("!puntero") || texto.startsWith("!lider")) {
+          log("comando: !puntero");
+          await sock.sendMessage(grupoId, { text: textoPuntero(await traerEstado(cfg)) });
         } else if (texto.startsWith("!amigos")) {
           log("comando: !amigos");
           await sock.sendMessage(grupoId, { text: await textoAmigos(cfg) });
@@ -784,6 +867,7 @@ const AYUDA =
   "*!jugando* - quien tiene el Dota abierto\n" +
   "*!frase* algo - agregar una cargada\n" +
   "*!lobby* - crear la lobby de la liga\n" +
+  "*!puntero* - quien va primero en cada tabla\n" +
   "*!amigos* - quien agrego al bot de Steam\n" +
   "*!ayuda* - esta lista";
 
@@ -1024,7 +1108,7 @@ async function enviarRecap(cfg, grupoId, fecha, prefijo = "") {
   }
   log(`armando el resumen del ${fecha}...`);
   const eventos = await resultadosDelDia(cfg, estado, fecha);
-  const texto = prefijo + textoRecap(fecha, eventos);
+  const texto = prefijo + textoRecap(fecha, eventos) + "\n\n" + textoPuntero(estado);
   log(texto.replace(/\n/g, " | "));
   if (grupoId) {
     const activo = await asegurarConexion(cfg);
@@ -1083,6 +1167,7 @@ async function pasada(cfg, grupoId, vistas, ajustes, primera) {
 
   if (primera) {
     guardarVistas(vistas);
+    await revisarPuntero(cfg, estado, grupoId, true); // solo anotar, sin cantar
     log(`arranque: ${nuevas.length} partida(s) ya conocidas, marcadas sin avisar`);
     return 0;
   }
@@ -1110,6 +1195,7 @@ async function pasada(cfg, grupoId, vistas, ajustes, primera) {
     await dormir(1000);
   }
   guardarVistas(vistas);
+  avisos += await revisarPuntero(cfg, estado, grupoId, false);
   return avisos;
 }
 
@@ -1174,7 +1260,7 @@ async function main() {
     grupoId = await elegirGrupo(sock, cfg);
     log(`avisare en el grupo: ${cfg.grupo_nombre || grupoId}`);
     escucharPreguntas(sock, cfg, grupoId);
-    log('comandos del grupo: !tabla, !yo, !soy, !jugando, !frase, !lobby, !amigos, !ayuda');
+    log('comandos del grupo: !tabla, !yo, !soy, !jugando, !puntero, !frase, !lobby, !amigos, !ayuda');
   } else {
     log("MODO PRUEBA: no se conecta a WhatsApp, solo muestra los avisos");
   }
