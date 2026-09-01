@@ -27,6 +27,7 @@ const VISTO_PATH = path.join(BASE, "partidas-vistas.json");
 const SESION_DIR = path.join(BASE, "sesion-whatsapp");
 const RECAP_PATH = path.join(BASE, "ultimo-recap.json");
 const PUNTERO_PATH = path.join(BASE, "punteros.json");
+const PREMIOS_PATH = path.join(BASE, "ultimo-premio.json");
 const QUIEN_PATH = path.join(BASE, "quien-es-quien.json");
 
 const LOBBY_PRIVADA = 1;
@@ -693,6 +694,67 @@ async function revisarPuntero(cfg, estado, grupoId, callado) {
   return avisos.length;
 }
 
+const MEDALLAS = ["\u{1F947}", "\u{1F948}", "\u{1F949}"];
+
+/** El mensaje de premiacion del mes que cerro. */
+function textoCeremonia(pr) {
+  const l = [
+    `\u{1F3C6} *PREMIOS DE ${(pr.mes_nombre || "").toUpperCase()}*`,
+    "",
+    "*Podio de la ranked*",
+  ];
+  (pr.podio || []).forEach((j, i) => {
+    const signo = j.pts > 0 ? "+" : "";
+    l.push(`${MEDALLAS[i] || ""} ${j.nombre}: ${signo}${j.pts} pts (${j.g}G-${j.p}P)`);
+  });
+  l.push("");
+  if (pr.mejor_racha) l.push(`\u{1F525} Racha mas larga: ${pr.mejor_racha.nombre}, ${pr.mejor_racha.n} al hilo`);
+  if (pr.peor_racha) l.push(`\u{1F480} Peor racha: ${pr.peor_racha.nombre}, ${pr.peor_racha.n} derrotas seguidas`);
+  if (pr.mas_partidas) l.push(`\u{1F3AE} El que mas jugo: ${pr.mas_partidas.nombre} con ${pr.mas_partidas.pj} partidas`);
+  if (pr.mas_derrotas && pr.mas_derrotas.p) {
+    l.push(`\u{1F4A9} El que mas perdio: ${pr.mas_derrotas.nombre}, ${pr.mas_derrotas.p} derrotas`);
+  }
+  if (pr.cagon) l.push(`\u{1F414} Cagon del mes: ${pr.cagon.nombre}, ${pr.cagon.n} partidas escapandole a la ranked`);
+  if (pr.dupla) {
+    l.push(`\u{1F46B} Mejor dupla: ${pr.dupla.quienes.join(" + ")} ` +
+           `(${pr.dupla.ganadas}-${pr.dupla.pj - pr.dupla.ganadas} juntos)`);
+  }
+  l.push("");
+  l.push("Mes nuevo, tabla en cero. A remar de nuevo.");
+  return l.join("\n");
+}
+
+/** Si la liga publico los premios de un mes que no cantamos, los canta. */
+async function revisarPremios(cfg, grupoId) {
+  let pr;
+  try {
+    pr = await traerJSON(`${cfg.web_publica}/premios.json`);
+  } catch (e) {
+    return false; // todavia no hay premios publicados
+  }
+  if (!pr || !pr.mes || !pr.podio) return false;
+  let ultimo = null;
+  try {
+    ultimo = JSON.parse(fs.readFileSync(PREMIOS_PATH, "utf8")).mes;
+  } catch {}
+  if (ultimo === pr.mes) return false;
+
+  const texto = textoCeremonia(pr);
+  log(`premios de ${pr.mes_nombre}: los canto en el grupo`);
+  if (grupoId) {
+    const activo = await asegurarConexion(cfg);
+    await activo.sendMessage(grupoId, { text: texto });
+  } else {
+    console.log(texto);
+  }
+  try {
+    fs.writeFileSync(PREMIOS_PATH, JSON.stringify({ mes: pr.mes }), "utf8");
+  } catch (e) {
+    log(`no pude anotar el premio cantado (${e.message})`);
+  }
+  return true;
+}
+
 /** Escucha el grupo: si preguntan quien juega, contesta. */
 function escucharPreguntas(sock, cfg, grupoId) {
   const disparadores = ["!jugando", "!ingame", "quien esta jugando", "quien juega", "quienes juegan"];
@@ -726,6 +788,16 @@ function escucharPreguntas(sock, cfg, grupoId) {
         } else if (texto.startsWith("!puntero") || texto.startsWith("!lider")) {
           log("comando: !puntero");
           await sock.sendMessage(grupoId, { text: textoPuntero(await traerEstado(cfg)) });
+        } else if (texto.startsWith("!premios")) {
+          log("comando: !premios");
+          let pr = null;
+          try {
+            pr = await traerJSON(`${cfg.web_publica}/premios.json`);
+          } catch {}
+          await sock.sendMessage(grupoId, {
+            text: pr && pr.podio ? textoCeremonia(pr)
+                                 : "Todavia no cerro ningun mes, asi que no hay premios.",
+          });
         } else if (texto.startsWith("!amigos")) {
           log("comando: !amigos");
           await sock.sendMessage(grupoId, { text: await textoAmigos(cfg) });
@@ -868,6 +940,7 @@ const AYUDA =
   "*!frase* algo - agregar una cargada\n" +
   "*!lobby* - crear la lobby de la liga\n" +
   "*!puntero* - quien va primero en cada tabla\n" +
+  "*!premios* - los premios del ultimo mes\n" +
   "*!amigos* - quien agrego al bot de Steam\n" +
   "*!ayuda* - esta lista";
 
@@ -1168,6 +1241,13 @@ async function pasada(cfg, grupoId, vistas, ajustes, primera) {
   if (primera) {
     guardarVistas(vistas);
     await revisarPuntero(cfg, estado, grupoId, true); // solo anotar, sin cantar
+    if (!fs.existsSync(PREMIOS_PATH)) {
+      // primera vez: anota el mes publicado sin cantarlo, para no revivir premios viejos
+      try {
+        const pr = await traerJSON(`${cfg.web_publica}/premios.json`);
+        if (pr && pr.mes) fs.writeFileSync(PREMIOS_PATH, JSON.stringify({ mes: pr.mes }), "utf8");
+      } catch {}
+    }
     log(`arranque: ${nuevas.length} partida(s) ya conocidas, marcadas sin avisar`);
     return 0;
   }
@@ -1196,6 +1276,7 @@ async function pasada(cfg, grupoId, vistas, ajustes, primera) {
   }
   guardarVistas(vistas);
   avisos += await revisarPuntero(cfg, estado, grupoId, false);
+  if (await revisarPremios(cfg, grupoId)) avisos++;
   return avisos;
 }
 
@@ -1260,7 +1341,7 @@ async function main() {
     grupoId = await elegirGrupo(sock, cfg);
     log(`avisare en el grupo: ${cfg.grupo_nombre || grupoId}`);
     escucharPreguntas(sock, cfg, grupoId);
-    log('comandos del grupo: !tabla, !yo, !soy, !jugando, !puntero, !frase, !lobby, !amigos, !ayuda');
+    log('comandos del grupo: !tabla, !yo, !soy, !jugando, !puntero, !premios, !frase, !lobby, !amigos, !ayuda');
   } else {
     log("MODO PRUEBA: no se conecta a WhatsApp, solo muestra los avisos");
   }
