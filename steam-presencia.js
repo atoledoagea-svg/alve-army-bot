@@ -182,12 +182,12 @@ class PresenciaSteam {
     }
     this.avisarUnaVez("ok", `steam: Steam devolvio datos de ${Object.keys(rp.users).length} jugador(es)`);
 
-    if (!this.mostreCrudo) {
-      // una sola vez: dejar en el log lo que contesta Steam, para poder mirarlo
+    // la primera vez que Steam devuelve algo, dejarlo crudo en el log:
+    // es lo unico que sirve para saber que manda Dota y en que campo
+    const cuantos = Object.keys(rp.users).length;
+    if (cuantos && !this.mostreCrudo) {
       this.mostreCrudo = true;
-      const cuantos = Object.keys(rp.users).length;
-      this.log(`steam: Steam contesto con datos de ${cuantos} jugador(es)` +
-               (cuantos ? `: ${JSON.stringify(rp.users).slice(0, 400)}` : ""));
+      this.log(`steam: asi contesta Steam: ${JSON.stringify(rp.users).slice(0, 500)}`);
     }
 
     for (const [steamid, datos] of Object.entries(rp.users)) {
