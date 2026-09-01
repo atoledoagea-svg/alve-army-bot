@@ -165,53 +165,62 @@ class PresenciaSteam {
     const steamids = jugadores.map((j) => aSteam64(j.account_id));
     const porId = new Map(jugadores.map((j) => [j.account_id, j.nombre]));
 
-    const rp = await new Promise((resolve) => {
-      try {
-        this.cliente.requestRichPresence(APPID_DOTA, steamids, (err, res) => {
-          if (err) this.avisarUnaVez("fallo", `steam: la consulta de presencia fallo (${err.message})`);
-          resolve(err ? null : res);
-        });
-      } catch (e) {
-        this.avisarUnaVez("excepcion", `steam: no pude consultar la presencia (${e.message})`);
-        resolve(null);
-      }
-    });
-    if (!rp || !rp.users) {
+    // getPersonas es lo que alimenta la lista de amigos del propio Steam:
+    // trae el juego, los tokens de presencia y el texto ya armado.
+    let personas = null;
+    try {
+      const r = await this.cliente.getPersonas(steamids);
+      personas = r && r.personas;
+    } catch (e) {
+      this.avisarUnaVez("fallo", `steam: la consulta de presencia fallo (${e.message})`);
+      return salida;
+    }
+    if (!personas) {
       this.avisarUnaVez("vacio", "steam: la consulta anduvo pero Steam no devolvio a nadie");
       return salida;
     }
-    this.avisarUnaVez("ok", `steam: Steam devolvio datos de ${Object.keys(rp.users).length} jugador(es)`);
 
-    // la primera vez que Steam devuelve algo, dejarlo crudo en el log:
-    // es lo unico que sirve para saber que manda Dota y en que campo
-    const cuantos = Object.keys(rp.users).length;
-    if (cuantos && !this.mostreCrudo) {
+    const enDota = Object.entries(personas).filter(([, p]) => String(p.gameid || "") === String(APPID_DOTA));
+    this.avisarUnaVez(`ok${enDota.length}`,
+      `steam: de ${Object.keys(personas).length} consultados, ${enDota.length} estan en el Dota`);
+    if (enDota.length && !this.mostreCrudo) {
       this.mostreCrudo = true;
-      this.log(`steam: asi contesta Steam: ${JSON.stringify(rp.users).slice(0, 500)}`);
+      this.log("steam: asi contesta Steam: " +
+        JSON.stringify(enDota.map(([id, p]) => ({
+          id, gameid: p.gameid, rp: p.rich_presence, texto: p.rich_presence_string,
+        }))).slice(0, 600));
     }
 
-    for (const [steamid, datos] of Object.entries(rp.users)) {
-      const presencia = datos.richPresence || {};
-      const status = presencia.status || "";
+    for (const [steamid, persona] of enDota) {
       const accountId = idDeCuenta(steamid);
       const nombre = porId.get(accountId);
       if (!nombre) continue;
-      if (!status && !presencia.WatchableGameID) continue; // ese no esta jugando
+
+      const tokens = {};
+      for (const t of persona.rich_presence || []) {
+        if (t && t.key) tokens[t.key] = t.value;
+      }
+      const status = tokens.status || "";
 
       let situacion = "menu";
-      if (EN_PARTIDA.includes(status) || presencia.WatchableGameID) situacion = "partida";
+      if (EN_PARTIDA.includes(status) || tokens.WatchableGameID) situacion = "partida";
       else if (BUSCANDO.includes(status)) situacion = "buscando";
 
-      // el heroe puede venir en cualquiera de los param, no siempre en param0
-      const heroe = (Object.values(presencia)
+      // el heroe puede venir en cualquiera de los tokens, o dentro del texto armado
+      let heroe = (Object.values(tokens)
         .map((v) => String(v || ""))
         .find((v) => v.startsWith("#npc_dota_hero_")) || "")
         .replace("#npc_dota_hero_", "").replace(/_/g, " ");
+      if (!heroe && persona.rich_presence_string) {
+        const m = String(persona.rich_presence_string).match(/(?:as|con)\s+(.+)$/i);
+        if (m) heroe = m[1].trim();
+      }
+
       salida.set(accountId, {
         nombre,
         situacion,
         heroe: heroe || null,
-        partida: presencia.WatchableGameID || null,
+        partida: tokens.WatchableGameID || null,
       });
     }
     return salida;
