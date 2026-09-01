@@ -165,22 +165,22 @@ class PresenciaSteam {
     const steamids = jugadores.map((j) => aSteam64(j.account_id));
     const porId = new Map(jugadores.map((j) => [j.account_id, j.nombre]));
 
-    // getPersonas es lo que alimenta la lista de amigos del propio Steam: trae
-    // el juego, los tokens de presencia y el texto ya armado. Exige que TODOS
-    // contesten, y los desconectados no siempre lo hacen, asi que se pide y
-    // despues se usa lo que haya llegado a la cache.
-    try {
-      await this.cliente.getPersonas(steamids);
-    } catch (e) {
-      // alguno no contesto; seguimos con los que si
-    }
+    // A cada jugador se le pregunta por separado y en paralelo: si uno esta
+    // desconectado y no contesta, se pierde el solo, no arrastra a los demas.
     const personas = {};
-    for (const sid of steamids) {
-      const u = (this.cliente.users || {})[sid];
-      if (u) personas[sid] = u;
-    }
+    await Promise.all(steamids.map(async (sid) => {
+      try {
+        const r = await this.cliente.getPersonas([sid]);
+        const p = r && r.personas && r.personas[sid];
+        if (p) personas[sid] = p;
+      } catch (e) {
+        // ese no contesto (suele estar desconectado): lo dejamos pasar
+        const cacheado = (this.cliente.users || {})[sid];
+        if (cacheado) personas[sid] = cacheado;
+      }
+    }));
     if (!Object.keys(personas).length) {
-      this.avisarUnaVez("vacio", "steam: no me llego el estado de ningun jugador");
+      this.avisarUnaVez("vacio", "steam: no me contesto ningun jugador");
       return salida;
     }
 
