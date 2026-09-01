@@ -24,9 +24,9 @@ if not exist "%VIEJA%\config.json" (
 copy /y "%VIEJA%\config.json" config.json >nul
 if exist "%VIEJA%\sesion-whatsapp" (
   xcopy /e /i /y /q "%VIEJA%\sesion-whatsapp" sesion-whatsapp >nul
-  echo  - sesion de WhatsApp copiada (no hace falta escanear el QR)
+  echo  - sesion de WhatsApp copiada: no hace falta escanear el QR
 ) else (
-  echo  - no habia sesion de WhatsApp: la primera vez te va a pedir el QR
+  echo  - no habia sesion de WhatsApp, la primera vez te pide el QR
 )
 for %%A in (partidas-vistas.json ultimo-recap.json quien-es-quien.json sesion-steam.json) do (
   if exist "%VIEJA%\%%A" copy /y "%VIEJA%\%%A" %%A >nul
