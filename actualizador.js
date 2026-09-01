@@ -2,7 +2,7 @@
 // Si lo hay, lo baja y avisa al bot para que se reinicie. La sesion de
 // WhatsApp vive en sesion-whatsapp/ (fuera del repo), asi que sobrevive
 // intacta a cada actualizacion: nunca hay que volver a escanear el QR.
-const { execFile } = require("child_process");
+const { execFile, spawn } = require("child_process");
 const path = require("path");
 const fs = require("fs");
 
@@ -66,7 +66,7 @@ function vigilar(dir, log, antesDeSalir) {
         if (!(await revisar(dir, log))) return;
         log("actualizacion: lista. Me reinicio (la sesion de WhatsApp se mantiene)");
         if (antesDeSalir) await antesDeSalir();
-        process.exit(SALIDA_ACTUALIZADO);
+        reiniciar(dir);
       } catch (e) {
         log(`actualizacion: fallo la revision (${e.message})`);
       }
@@ -76,4 +76,22 @@ function vigilar(dir, log, antesDeSalir) {
   });
 }
 
-module.exports = { vigilar, revisar, SALIDA_ACTUALIZADO };
+/** Vuelve a arrancar el bot ya actualizado.
+ *
+ * Con INICIAR.bat alcanza con salir con el codigo 42: el .bat lo relanza.
+ * Si lo arrancaron a mano (node bot.js) no hay quien lo levante, asi que el
+ * bot se lanza a si mismo antes de irse.
+ */
+function reiniciar(dir) {
+  if (process.env.ALVE_LANZADOR) return process.exit(SALIDA_ACTUALIZADO);
+  try {
+    spawn(process.execPath, process.argv.slice(1), {
+      cwd: dir, detached: true, stdio: "inherit",
+    }).unref();
+  } catch (e) {
+    console.error("no pude relanzarme solo:", e.message);
+  }
+  process.exit(SALIDA_ACTUALIZADO);
+}
+
+module.exports = { vigilar, revisar, reiniciar, SALIDA_ACTUALIZADO };

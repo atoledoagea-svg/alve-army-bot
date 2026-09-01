@@ -8,6 +8,7 @@ where git >nul 2>nul
 if not errorlevel 1 (
   git pull --ff-only >nul 2>nul
 )
+set ALVE_LANZADOR=1
 node bot.js
 set CODIGO=%ERRORLEVEL%
 
