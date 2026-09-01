@@ -166,19 +166,31 @@ class PresenciaSteam {
     });
     if (!rp || !rp.users) return salida;
 
+    if (!this.mostreCrudo) {
+      // una sola vez: dejar en el log lo que contesta Steam, para poder mirarlo
+      this.mostreCrudo = true;
+      const cuantos = Object.keys(rp.users).length;
+      this.log(`steam: Steam contesto con datos de ${cuantos} jugador(es)` +
+               (cuantos ? `: ${JSON.stringify(rp.users).slice(0, 400)}` : ""));
+    }
+
     for (const [steamid, datos] of Object.entries(rp.users)) {
       const presencia = datos.richPresence || {};
       const status = presencia.status || "";
-      if (!status) continue;
       const accountId = idDeCuenta(steamid);
       const nombre = porId.get(accountId);
       if (!nombre) continue;
+      if (!status && !presencia.WatchableGameID) continue; // ese no esta jugando
 
       let situacion = "menu";
       if (EN_PARTIDA.includes(status) || presencia.WatchableGameID) situacion = "partida";
       else if (BUSCANDO.includes(status)) situacion = "buscando";
 
-      const heroe = (presencia.param0 || "").replace("#npc_dota_hero_", "").replace(/_/g, " ");
+      // el heroe puede venir en cualquiera de los param, no siempre en param0
+      const heroe = (Object.values(presencia)
+        .map((v) => String(v || ""))
+        .find((v) => v.startsWith("#npc_dota_hero_")) || "")
+        .replace("#npc_dota_hero_", "").replace(/_/g, " ");
       salida.set(accountId, {
         nombre,
         situacion,
