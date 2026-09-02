@@ -168,18 +168,23 @@ class PresenciaSteam {
     const steamids = jugadores.map((j) => aSteam64(j.account_id));
     const porId = new Map(jugadores.map((j) => [j.account_id, j.nombre]));
 
-    // Se pide todo junto (es lo que hace la lista de amigos de Steam) y despues
-    // se lee la cache, que Steam mantiene al dia sola: si alguno no contesta,
-    // no arrastra a los demas.
-    try {
-      await this.cliente.getPersonas(steamids);
-    } catch (e) {
-      // alguno no contesto; seguimos con lo que Steam ya nos habia contado
-    }
+    // A cada uno se le pregunta por separado, de a cuatro por vez: pedirlos todos
+    // juntos hace que un solo desconectado que no contesta deje la consulta sin
+    // datos, y ahi no se ve a nadie en partida. De a poco tambien evita apurar
+    // demasiado a Steam.
     const personas = {};
-    for (const sid of steamids) {
-      const p = (this.cliente.users || {})[sid];
-      if (p) personas[sid] = p;
+    const tanda = 4;
+    for (let i = 0; i < steamids.length; i += tanda) {
+      await Promise.all(steamids.slice(i, i + tanda).map(async (sid) => {
+        try {
+          const r = await this.cliente.getPersonas([sid]);
+          const p = r && r.personas && r.personas[sid];
+          if (p) personas[sid] = p;
+        } catch (e) {
+          const cacheado = (this.cliente.users || {})[sid];
+          if (cacheado) personas[sid] = cacheado; // lo ultimo que nos habia contado
+        }
+      }));
     }
     if (!Object.keys(personas).length) {
       this.avisarUnaVez("vacio", "steam: no me contesto ningun jugador");

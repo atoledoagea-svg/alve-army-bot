@@ -361,6 +361,7 @@ function intentarConectar(cfg) {
         qrcode.generate(qr, { small: true });
       }
       if (connection === "open") {
+        waConectado = true;
         abierto = true;
         wa.sock = sock;
         wa.conectado = true;
@@ -368,6 +369,7 @@ function intentarConectar(cfg) {
         resolve(sock);
       }
       if (connection === "close") {
+        waConectado = false;
         const codigo = lastDisconnect?.error?.output?.statusCode;
         wa.conectado = false;
         if (codigo === DisconnectReason.loggedOut) salirPorSesionCerrada();
@@ -475,6 +477,7 @@ let ultimaPresencia = new Map(); // lo ultimo que vio Steam, para publicarlo igu
 let marcador = null;     // el que sabe como va cada partida en curso
 let ultimaHuella = null; // para no reescribir lo mismo una y otra vez
 let enPresencia = false; // para que dos vueltas de presencia no se pisen
+let waConectado = false; // si WhatsApp esta enganchado, para poder verlo desde la web
 let ultimoEnvio = 0;
 
 /** Le manda a la web quien esta en partida y con que heroe. */
@@ -490,7 +493,7 @@ async function publicarPresencia(cfg, actual, steamConectado) {
     heroe_id: i.heroe_id || null, marcador: i.marcador || null,
     kda: i.kda || null, crudo: i.crudo || null,
   }));
-  const huella = JSON.stringify({ steam: Boolean(steamConectado), jugadores });
+  const huella = JSON.stringify({ steam: Boolean(steamConectado), wa: waConectado, jugadores });
   const ahora = Date.now();
   const igual = huella === ultimaHuella;
   const reciente = ahora - ultimoEnvio < LATIDO_MS;
@@ -505,7 +508,8 @@ async function publicarPresencia(cfg, actual, steamConectado) {
     const r = await fetch(`${cfg.web_publica}/api/presencia`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ clave: cfg.admin_key, steam: Boolean(steamConectado), jugadores }),
+      body: JSON.stringify({ clave: cfg.admin_key, steam: Boolean(steamConectado),
+                             whatsapp: waConectado, jugadores }),
     });
     if (r.ok) resultado = "ok";
     else if (r.status === 403) resultado = "clave-mal";
@@ -889,12 +893,6 @@ async function revisarOrden(cfg, grupoId, callado) {
   if (!hubo) {
     log("orden desde la web: ya estaba en la ultima version");
     return false;
-  }
-  if (grupoId) {
-    try {
-      const activo = await asegurarConexion(cfg);
-      await activo.sendMessage(grupoId, { text: "\u{1F527} Me actualizo un momento, ya vuelvo." });
-    } catch {}
   }
   actualizador.reiniciar(BASE);
   return true;
@@ -1563,13 +1561,8 @@ async function main() {
   }
 
   // se actualiza solo desde el repo, sin perder la sesion de WhatsApp
-  actualizador.vigilar(BASE, log, async () => {
-    if (sock && grupoId) {
-      try {
-        await sock.sendMessage(grupoId, { text: "\u{1F527} Me actualizo un momento, ya vuelvo." });
-      } catch {}
-    }
-  });
+  // se actualiza sin avisarle al grupo: es ruido que no le importa a nadie
+  actualizador.vigilar(BASE, log);
 
   const vistas = cargarVistas();
   let primera = vistas.size === 0;
