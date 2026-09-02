@@ -702,7 +702,7 @@ async function textoDuplas(cfg) {
     partes.push("", "*Las que mejor no se llevan*");
     partes.push(...d.peores.map((x, i) => linea(x, i).replace(/^\S+/, "\u{1F4A9}")));
   }
-  partes.push("", "Cuenta solo lo jugado JUNTOS en lobbys de la liga.");
+  partes.push("", "Cuenta las rankeds jugadas JUNTOS y del mismo lado.");
   return partes.join("\n");
 }
 
