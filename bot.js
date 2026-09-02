@@ -477,8 +477,9 @@ async function publicarPresencia(cfg, actual, steamConectado) {
   const ahora = Date.now();
   const igual = huella === ultimaHuella;
   const reciente = ahora - ultimoEnvio < LATIDO_MS;
-  // si no cambio nada y no hay nadie que mostrar, no vale la pena escribir
-  if (igual && (reciente || !jugadores.length)) return;
+  // se escribe si cambio algo, y si no, cada tanto igual: ese latido es lo
+  // unico que permite saber desde la web si el bot sigue vivo
+  if (igual && reciente) return;
   ultimaHuella = huella;
   ultimoEnvio = ahora;
 
