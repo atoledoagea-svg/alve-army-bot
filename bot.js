@@ -16,6 +16,7 @@ const baileys = require("@whiskeysockets/baileys");
 const { PresenciaSteam } = require("./steam-presencia.js");
 const { LobbyDota } = require("./dota-lobby.js");
 const { Marcador } = require("./marcador.js");
+const { PresenciaDiscord } = require("./discord-presencia.js");
 const actualizador = require("./actualizador.js");
 
 const makeWASocket = baileys.default || baileys.makeWASocket;
@@ -477,6 +478,8 @@ let vistosPorSteam = -1; // para no repetir el mismo aviso cada vuelta
 let avisoWeb = null;     // idem, para el estado del envio a la web
 let ultimaPresencia = new Map(); // lo ultimo que vio Steam, para publicarlo igual
 let marcador = null;     // el que sabe como va cada partida en curso
+let discord = null;      // la conexion con Discord, para ver quien esta ahi
+let huellaDiscord = null; // para no reescribir la misma lista
 let ultimaHuella = null; // para no reescribir lo mismo una y otra vez
 let enPresencia = false; // para que dos vueltas de presencia no se pisen
 let waConectado = false; // si WhatsApp esta enganchado, para poder verlo desde la web
@@ -488,6 +491,30 @@ let ultimoEnvio = 0;
 // fresco un dato: si no, cuando nadie cambia de estado la web lo descarta
 // por viejo y deja de mostrar quien esta jugando.
 const LATIDO_MS = 150 * 1000; // 2 minutos y medio
+
+/** Le manda a la web quien esta conectado en Discord, si cambio algo. */
+async function publicarDiscord(cfg) {
+  if (!discord || !discord.listo) return;
+  let miembros;
+  try {
+    miembros = await discord.consultar();
+  } catch (e) {
+    return;
+  }
+  const huella = JSON.stringify(miembros);
+  if (huella === huellaDiscord) return; // nada nuevo que contar
+  huellaDiscord = huella;
+  try {
+    await fetch(`${cfg.web_publica}/api/discord`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ clave: cfg.admin_key, miembros }),
+    });
+  } catch (e) {
+    // si la web no contesta, se reintenta en la vuelta siguiente
+    huellaDiscord = null;
+  }
+}
 
 /** Le manda a la web quien esta en partida, sin gastar escrituras al pedo. */
 async function publicarPresencia(cfg, actual, steamConectado) {
@@ -575,6 +602,7 @@ async function revisarSoloPresencia(cfg, grupoId) {
     if (!hubo && (!presencia || !presencia.listo)) ultimaPresencia = new Map();
     if (cfg.admin_key) {
       await publicarPresencia(cfg, ultimaPresencia, Boolean(presencia && presencia.listo));
+      await publicarDiscord(cfg);
     }
   } finally {
     enPresencia = false;
@@ -1583,6 +1611,14 @@ async function main() {
     }
   } else {
     log("steam: sin cuenta bot configurada (avisare cuando abran el Dota)");
+  }
+
+  // Discord va por su cuenta: no depende de Steam ni de WhatsApp
+  discord = new PresenciaDiscord(cfg, log);
+  if (discord.activo) {
+    discord.conectar().catch((e) => log(`discord: no pude conectar (${e.message})`));
+  } else {
+    log("discord: sin token configurado (no voy a mostrar quien esta en Discord)");
   }
 
   // se actualiza solo desde el repo, sin perder la sesion de WhatsApp
