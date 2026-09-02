@@ -23,6 +23,10 @@ const EN_PARTIDA = ["#DOTA_RP_PLAYING_AS", "#DOTA_RP_HERO_SELECTION", "#DOTA_RP_
                     "#DOTA_RP_PREGAME", "#DOTA_RP_WAIT_FOR_PLAYERS_TO_LOAD"];
 const BUSCANDO = ["#DOTA_RP_FINDING_MATCH", "#DOTA_RP_WAIT_FOR_READY_CHECK"];
 // mirar un replay o espectear no es jugar, aunque Dota mande la partida
+// Cuanto se mantiene el ultimo estado conocido cuando Steam deja de mandarlo.
+// Valve corta la presencia cada tanto sin que el jugador salga de la partida.
+const GRACIA_MS = 4 * 60 * 1000;
+
 const MIRANDO = ["#DOTA_RP_SPECTATING", "#DOTA_RP_WATCHING_REPLAY", "#DOTA_RP_WATCHING_GAME",
                  "#DOTA_RP_WATCHING_TOURNAMENT", "#DOTA_RP_CASTING"];
 
@@ -298,18 +302,20 @@ class PresenciaSteam {
    */
   estabilizar(nueva) {
     const activo = (s) => s === "partida" || s === "buscando";
+    const ahora = Date.now();
     for (const [aid, antes] of this.estado) {
       if (!activo(antes.situacion)) continue;
-      const ahora = nueva.get(aid);
-      if (ahora && activo(ahora.situacion)) {
+      const leido = nueva.get(aid);
+      if (leido && activo(leido.situacion)) {
         this.dudas.delete(aid);
         continue;
       }
-      // dice que ya no esta jugando: se le da una vuelta de gracia
-      const veces = (this.dudas.get(aid) || 0) + 1;
-      if (veces < 2) {
-        this.dudas.set(aid, veces);
-        nueva.set(aid, antes); // se mantiene lo anterior hasta confirmar
+      // Steam dejo de contar que hace: puede ser que salio, o que no mando el
+      // dato. Se mantiene lo ultimo que sabemos por un rato antes de bajarlo.
+      const desde = this.dudas.get(aid) || ahora;
+      this.dudas.set(aid, desde);
+      if (ahora - desde < GRACIA_MS) {
+        nueva.set(aid, antes);
       } else {
         this.dudas.delete(aid);
       }

@@ -291,6 +291,8 @@ function eventosDePartida(cfg, estado, detalle, matchId, ajustes) {
     return [];
   }
   const modo = lobby === LOBBY_PRIVADA ? "liga" : lobby === LOBBY_RANKED ? "solo" : "casual";
+  // los turbos y las normales quedan registrados en la liga, pero no se avisan
+  if (modo === "casual") return [];
   const juego = detalle.game_mode === MODO_TURBO ? "TURBO" : "NORMAL";
 
   return presentes.map((p) => {
@@ -599,12 +601,8 @@ async function revisarPartidas(cfg, estado, grupoId) {
 
   const entraron = presencia.novedades(actual);
   const avisos = [];
-  if (entraron.length) {
-    avisos.push(entraron.length === 1
-      ? `\u2694\uFE0F Entro en Partida: ${entraron[0]}`
-      : `\u2694\uFE0F Entraron en Partida: ${entraron.join(", ")}`);
-  }
-  // los que se acaban de poner en la cola, sin repetir al mismo cada vuelta
+  // el aviso de "entro en partida" se saco: llenaba el grupo sin aportar nada.
+  // Queda el de la cola, que es el momento en que alguien todavia se puede sumar.
   const buscan = (entraron.buscando || []).filter((n) => !yaAvisado(n));
   if (buscan.length) {
     avisos.push(buscan.length === 1
