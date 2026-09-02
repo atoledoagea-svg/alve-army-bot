@@ -69,6 +69,7 @@ Para que arranque cuando prendés la PC: doble clic en `instalar-inicio-automati
 | `!lobby` | Crea una lobby privada (si está la cuenta de Steam) |
 | `!puntero` | Quién va primero en cada tabla y con cuántos puntos |
 | `!premios` | Los premios del último mes cerrado |
+| `!duplas` | Las mejores y peores parejas de la liga |
 | `!amigos` | Quién de la liga agregó al bot de Steam y quién no |
 | `!ayuda` | La lista completa |
 

@@ -686,6 +686,26 @@ async function textoJugando(cfg) {
   );
 }
 
+/** Las parejas que mejor y peor rinden juntas en las lobbys de la liga. */
+async function textoDuplas(cfg) {
+  const estado = await traerEstado(cfg);
+  const d = estado.duplas || {};
+  const linea = (x, i) => `${["\u{1F947}", "\u{1F948}", "\u{1F949}"][i] || "\u2022"} ` +
+    `${x.quienes.join(" + ")}: ${x.ganadas}-${x.pj - x.ganadas} (${x.wr}%)`;
+
+  if (!(d.mejores || []).length) {
+    return "Todavia no hay suficientes lobbys jugadas para sacar duplas.";
+  }
+  const partes = ["\u{1F46B} *Duplas de la liga*", "", "*Las que mejor se llevan*"];
+  partes.push(...d.mejores.map(linea));
+  if ((d.peores || []).length) {
+    partes.push("", "*Las que mejor no se llevan*");
+    partes.push(...d.peores.map((x, i) => linea(x, i).replace(/^\S+/, "\u{1F4A9}")));
+  }
+  partes.push("", "Cuenta solo lo jugado JUNTOS en lobbys de la liga.");
+  return partes.join("\n");
+}
+
 /** Quien tiene agregado al bot de Steam y quien no. */
 async function textoAmigos(cfg) {
   if (!presencia || !presencia.listo) {
@@ -930,6 +950,9 @@ function escucharPreguntas(sock, cfg, grupoId) {
         } else if (texto.startsWith("!puntero") || texto.startsWith("!lider")) {
           log("comando: !puntero");
           await sock.sendMessage(grupoId, { text: textoPuntero(await traerEstado(cfg)) });
+        } else if (texto.startsWith("!duplas") || texto.startsWith("!duplas")) {
+          log("comando: !duplas");
+          await sock.sendMessage(grupoId, { text: await textoDuplas(cfg) });
         } else if (texto.startsWith("!premios")) {
           log("comando: !premios");
           let pr = null;
@@ -1083,6 +1106,7 @@ const AYUDA =
   "*!lobby* - crear la lobby de la liga\n" +
   "*!puntero* - quien va primero en cada tabla\n" +
   "*!premios* - los premios del ultimo mes\n" +
+  "*!duplas* - las mejores y peores parejas\n" +
   "*!amigos* - quien agrego al bot de Steam\n" +
   "*!ayuda* - esta lista";
 
@@ -1510,7 +1534,7 @@ async function main() {
     grupoId = await elegirGrupo(sock, cfg);
     log(`avisare en el grupo: ${cfg.grupo_nombre || grupoId}`);
     escucharPreguntas(sock, cfg, grupoId);
-    log('comandos del grupo: !tabla, !yo, !soy, !jugando, !puntero, !premios, !frase, !lobby, !amigos, !ayuda');
+    log('comandos del grupo: !tabla, !yo, !soy, !jugando, !puntero, !premios, !duplas, !frase, !lobby, !amigos, !ayuda');
   } else {
     log("MODO PRUEBA: no se conecta a WhatsApp, solo muestra los avisos");
   }
