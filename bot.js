@@ -470,7 +470,8 @@ const LATIDO_MS = 12 * 60 * 1000; // como maximo, un envio cada 12 minutos
 async function publicarPresencia(cfg, actual, steamConectado) {
   const jugadores = [...actual.values()].map((i) => ({
     nombre: i.nombre, situacion: i.situacion, heroe: i.heroe,
-    heroe_id: i.heroe_id || null, marcador: i.marcador || null, crudo: i.crudo || null,
+    heroe_id: i.heroe_id || null, marcador: i.marcador || null,
+    kda: i.kda || null, crudo: i.crudo || null,
   }));
   const huella = JSON.stringify({ steam: Boolean(steamConectado), jugadores });
   const ahora = Date.now();
@@ -503,7 +504,7 @@ async function publicarPresencia(cfg, actual, steamConectado) {
 }
 
 /** Le agrega a cada uno como va su partida (marcador y minuto). */
-async function sumarMarcadores(actual) {
+async function sumarMarcadores(actual, cfg) {
   if (!marcador || !marcador.listo) return;
   const enPartida = [...actual.values()].filter((i) => i.situacion === "partida" && i.partida);
   if (!enPartida.length) return;
@@ -513,6 +514,15 @@ async function sumarMarcadores(actual) {
   } catch (e) {
     return; // sin marcador igual se muestra el heroe
   }
+  // el KDA de cada uno sale del servidor donde se esta jugando
+  const kdas = new Map();
+  for (const juego of new Set(juegos.values())) {
+    if (!juego.servidor) continue;
+    for (const [aid, kda] of await marcador.kdaEnVivo(juego.servidor, cfg.api_key)) {
+      kdas.set(aid, kda);
+    }
+  }
+
   for (const info of enPartida) {
     const juego = juegos.get(String(info.partida));
     if (!juego) continue;
@@ -522,6 +532,8 @@ async function sumarMarcadores(actual) {
     const aFavor = yo && !yo.radiant ? juego.dire : juego.radiant;
     const enContra = yo && !yo.radiant ? juego.radiant : juego.dire;
     info.marcador = { aFavor, enContra, minuto: juego.minuto };
+    const mio = kdas.get(aid);
+    if (mio) info.kda = mio;
   }
 }
 
@@ -534,7 +546,7 @@ async function revisarPartidas(cfg, estado, grupoId) {
   } catch (e) {
     return false;
   }
-  await sumarMarcadores(actual);
+  await sumarMarcadores(actual, cfg);
   ultimaPresencia = actual;
   const enPartida = [...actual.values()].filter((i) => i.situacion === "partida").length;
   if (actual.size !== vistosPorSteam) {

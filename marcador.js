@@ -77,6 +77,7 @@ class Marcador {
             radiant: juego.radiant_score || 0,
             dire: juego.dire_score || 0,
             minuto: Math.max(0, Math.round((juego.game_time || 0) / 60)),
+            servidor: juego.server_steam_id ? String(juego.server_steam_id) : null,
             jugadores,
           });
         }
@@ -96,6 +97,35 @@ class Marcador {
         resolve(salida);
       }
     });
+  }
+
+  /**
+   * El KDA en vivo de cada jugador de esa partida.
+   * Devuelve Map: account_id -> {k, d, a}. Vacio si Steam no contesta.
+   */
+  async kdaEnVivo(servidor, apiKey) {
+    const salida = new Map();
+    if (!servidor || !apiKey) return salida;
+    try {
+      const url = "https://api.steampowered.com/IDOTA2MatchStats_570/GetRealtimeStats/v1/" +
+                  `?key=${apiKey}&server_steam_id=${servidor}`;
+      const r = await fetch(url);
+      if (!r.ok) return salida;
+      const d = await r.json();
+      for (const equipo of d.teams || []) {
+        for (const j of equipo.players || []) {
+          if (!j.accountid) continue;
+          salida.set(j.accountid, {
+            k: j.kill_count || 0,
+            d: j.death_count || 0,
+            a: j.assists_count || 0,
+          });
+        }
+      }
+    } catch (e) {
+      this.log(`marcador: no pude traer el detalle en vivo (${e.message})`);
+    }
+    return salida;
   }
 
   cerrar() {
