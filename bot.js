@@ -457,20 +457,33 @@ async function enJuego(cfg, estado) {
 
 let vistosPorSteam = -1; // para no repetir el mismo aviso cada vuelta
 let avisoWeb = null;     // idem, para el estado del envio a la web
+let ultimaPresencia = new Map(); // lo ultimo que vio Steam, para publicarlo igual
+let ultimaHuella = null; // para no reescribir lo mismo una y otra vez
+let ultimoEnvio = 0;
 
 /** Le manda a la web quien esta en partida y con que heroe. */
-async function publicarPresencia(cfg, actual) {
+const LATIDO_MS = 12 * 60 * 1000; // como maximo, un envio cada 12 minutos
+
+/** Le manda a la web quien esta en partida, sin gastar escrituras al pedo. */
+async function publicarPresencia(cfg, actual, steamConectado) {
+  const jugadores = [...actual.values()].map((i) => ({
+    nombre: i.nombre, situacion: i.situacion, heroe: i.heroe,
+  }));
+  const huella = JSON.stringify({ steam: Boolean(steamConectado), jugadores });
+  const ahora = Date.now();
+  const igual = huella === ultimaHuella;
+  const reciente = ahora - ultimoEnvio < LATIDO_MS;
+  // si no cambio nada y no hay nadie que mostrar, no vale la pena escribir
+  if (igual && (reciente || !jugadores.length)) return;
+  ultimaHuella = huella;
+  ultimoEnvio = ahora;
+
   let resultado;
   try {
     const r = await fetch(`${cfg.web_publica}/api/presencia`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        clave: cfg.admin_key,
-        jugadores: [...actual.values()].map((i) => ({
-          nombre: i.nombre, situacion: i.situacion, heroe: i.heroe,
-        })),
-      }),
+      body: JSON.stringify({ clave: cfg.admin_key, steam: Boolean(steamConectado), jugadores }),
     });
     if (r.ok) resultado = "ok";
     else if (r.status === 403) resultado = "clave-mal";
@@ -480,7 +493,7 @@ async function publicarPresencia(cfg, actual) {
   }
   if (resultado === avisoWeb) return; // no repetir lo mismo cada vuelta
   avisoWeb = resultado;
-  if (resultado === "ok") log(`web: le mande la presencia de ${actual.size} jugador(es)`);
+  if (resultado === "ok") log(`web: le mande la presencia de ${jugadores.length} jugador(es)`);
   else if (resultado === "clave-mal") log("web: rechazo la presencia, el admin_key de config.json no es el correcto");
   else if (resultado === "sin-internet") log("web: no pude avisarle la presencia (sin conexion?)");
   else log(`web: no acepto la presencia (${resultado})`);
@@ -495,16 +508,7 @@ async function revisarPartidas(cfg, estado, grupoId) {
   } catch (e) {
     return false;
   }
-  // le pasamos el estado fino a la web, para que muestre con que heroe juega cada uno.
-  // Se publica aunque no veamos a nadie: asi la web sabe que el bot esta vivo.
-  if (cfg.admin_key) {
-    publicarPresencia(cfg, actual);
-  } else if (avisoWeb !== "sin-clave") {
-    avisoWeb = "sin-clave";
-    log("web: falta admin_key en config.json, asi que la web no va a poder " +
-        "mostrar con que heroe juega cada uno");
-  }
-
+  ultimaPresencia = actual;
   const enPartida = [...actual.values()].filter((i) => i.situacion === "partida").length;
   if (actual.size !== vistosPorSteam) {
     vistosPorSteam = actual.size;
@@ -1270,7 +1274,19 @@ async function pasada(cfg, grupoId, vistas, ajustes, primera) {
 
   if (!primera) {
     const exacto = await revisarPartidas(cfg, estado, grupoId);
-    if (!exacto) await revisarEntradas(cfg, estado, grupoId);
+    if (!exacto) {
+      ultimaPresencia = new Map(); // sin Steam no sabemos nada fino
+      await revisarEntradas(cfg, estado, grupoId);
+    }
+    // Se publica siempre, con Steam o sin Steam: asi la web distingue
+    // "el bot esta muerto" de "el bot anda pero Steam no le cuenta nada".
+    if (cfg.admin_key) {
+      await publicarPresencia(cfg, ultimaPresencia, Boolean(presencia && presencia.listo));
+    } else if (avisoWeb !== "sin-clave") {
+      avisoWeb = "sin-clave";
+      log("web: falta admin_key en config.json, asi que la web no va a poder " +
+          "mostrar con que heroe juega cada uno");
+    }
   }
 
   const nuevas = [];
