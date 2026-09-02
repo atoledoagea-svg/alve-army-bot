@@ -168,28 +168,30 @@ class PresenciaSteam {
     const steamids = jugadores.map((j) => aSteam64(j.account_id));
     const porId = new Map(jugadores.map((j) => [j.account_id, j.nombre]));
 
-    // A cada jugador se le pregunta por separado y en paralelo: si uno esta
-    // desconectado y no contesta, se pierde el solo, no arrastra a los demas.
+    // Se pide todo junto (es lo que hace la lista de amigos de Steam) y despues
+    // se lee la cache, que Steam mantiene al dia sola: si alguno no contesta,
+    // no arrastra a los demas.
+    try {
+      await this.cliente.getPersonas(steamids);
+    } catch (e) {
+      // alguno no contesto; seguimos con lo que Steam ya nos habia contado
+    }
     const personas = {};
-    await Promise.all(steamids.map(async (sid) => {
-      try {
-        const r = await this.cliente.getPersonas([sid]);
-        const p = r && r.personas && r.personas[sid];
-        if (p) personas[sid] = p;
-      } catch (e) {
-        // ese no contesto (suele estar desconectado): lo dejamos pasar
-        const cacheado = (this.cliente.users || {})[sid];
-        if (cacheado) personas[sid] = cacheado;
-      }
-    }));
+    for (const sid of steamids) {
+      const p = (this.cliente.users || {})[sid];
+      if (p) personas[sid] = p;
+    }
     if (!Object.keys(personas).length) {
       this.avisarUnaVez("vacio", "steam: no me contesto ningun jugador");
       return salida;
     }
 
+    let sinDetalle = 0;
     const enDota = Object.entries(personas).filter(([, p]) => String(p.gameid || "") === String(APPID_DOTA));
-    this.avisarUnaVez(`ok${enDota.length}`,
-      `steam: de ${Object.keys(personas).length} consultados, ${enDota.length} estan en el Dota`);
+    const resumen = () => this.avisarUnaVez(
+      `ok${enDota.length}-${sinDetalle}`,
+      `steam: ${enDota.length} de ${Object.keys(personas).length} estan en el Dota` +
+      (sinDetalle ? `, y de ${sinDetalle} no me llego el detalle` : ""));
     if (enDota.length && !this.mostreCrudo) {
       this.mostreCrudo = true;
       this.log("steam: asi contesta Steam: " +
@@ -208,6 +210,12 @@ class PresenciaSteam {
         if (t && t.key) tokens[t.key] = t.value;
       }
       const status = tokens.status || "";
+      // Sin nada de Steam no se puede decir que hace: mejor no informarlo y
+      // dejar que la web lo muestre con el dato publico, que es lo unico cierto.
+      if (!status && !tokens.WatchableGameID) {
+        sinDetalle++;
+        continue;
+      }
 
       let situacion = "menu";
       if (MIRANDO.includes(status)) situacion = "mirando";
@@ -238,6 +246,7 @@ class PresenciaSteam {
         partida: tokens.WatchableGameID || null,
       });
     }
+    resumen();
     return salida;
   }
 
