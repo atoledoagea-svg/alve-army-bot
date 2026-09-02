@@ -7,5 +7,6 @@
   "admin_key": "LA_CLAVE_DE_ADMIN_DE_LA_LIGA",
   "avisar_entradas": true,
   "minutos_reaviso": 45,
-  "steam_en_dota": true
+  "steam_en_dota": true,
+  "presencia_seg": 45
 }

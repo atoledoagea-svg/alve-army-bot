@@ -54,6 +54,8 @@ function cargarConfig() {
   const cfg = JSON.parse(fs.readFileSync(CONFIG_PATH, "utf8"));
   cfg.web_publica = (cfg.web_publica || "https://miniliga-dota2.vercel.app").replace(/\/$/, "");
   cfg.intervalo_seg = cfg.intervalo_seg || 180;
+  // cada cuanto se mira quien juega o busca partida (es una consulta liviana)
+  cfg.presencia_seg = Math.max(20, cfg.presencia_seg || 45);
   cfg.puntos_victoria = cfg.puntos_victoria ?? 25;
   cfg.puntos_derrota = cfg.puntos_derrota ?? -25;
   cfg.avisar_entradas = cfg.avisar_entradas !== false; // avisar cuando alguien abre el Dota
@@ -472,6 +474,7 @@ let avisoWeb = null;     // idem, para el estado del envio a la web
 let ultimaPresencia = new Map(); // lo ultimo que vio Steam, para publicarlo igual
 let marcador = null;     // el que sabe como va cada partida en curso
 let ultimaHuella = null; // para no reescribir lo mismo una y otra vez
+let enPresencia = false; // para que dos vueltas de presencia no se pisen
 let ultimoEnvio = 0;
 
 /** Le manda a la web quien esta en partida y con que heroe. */
@@ -546,6 +549,25 @@ async function sumarMarcadores(actual, cfg) {
     info.marcador = { aFavor, enContra, minuto: juego.minuto };
     const mio = kdas.get(aid);
     if (mio) info.kda = mio;
+  }
+}
+
+/** Vuelta corta: solo mira quien esta jugando o buscando, y lo publica.
+ *
+ * No toca el historial de partidas (eso es lo lento) ni el resumen del dia.
+ */
+async function revisarSoloPresencia(cfg, grupoId) {
+  if (enPresencia) return; // si la anterior todavia no termino, se saltea
+  enPresencia = true;
+  try {
+    const estado = await traerEstado(cfg);
+    const hubo = await revisarPartidas(cfg, estado, grupoId);
+    if (!hubo) ultimaPresencia = new Map();
+    if (cfg.admin_key) {
+      await publicarPresencia(cfg, ultimaPresencia, Boolean(presencia && presencia.listo));
+    }
+  } finally {
+    enPresencia = false;
   }
 }
 
@@ -1550,7 +1572,15 @@ async function main() {
   let primera = vistas.size === 0;
   if (primera && !leerUltimoRecap()) guardarUltimoRecap(fechaART());
   const ajustes = new Map();
-  log(`listo. Reviso cada ${cfg.intervalo_seg} segundos. (Ctrl+C para cortar)`);
+  log(`listo. Partidas cada ${cfg.intervalo_seg} segundos, presencia cada ${cfg.presencia_seg}. (Ctrl+C para cortar)`);
+
+  // La presencia va por su cuenta y mucho mas seguido: una cola de ranked dura
+  // pocos minutos y el aviso tiene que llegar mientras todavia sirve.
+  if (!process.argv.includes("--una-vez")) {
+    setInterval(() => {
+      revisarSoloPresencia(cfg, grupoId).catch((e) => log(`presencia: ${e.message}`));
+    }, cfg.presencia_seg * 1000).unref();
+  }
 
   for (;;) {
     try {
