@@ -217,14 +217,16 @@ class PresenciaSteam {
       else if (tokens.WatchableGameID) situacion = "partida";
 
       // el heroe puede venir en cualquiera de los tokens, o dentro del texto armado
-      let heroe = (Object.values(tokens)
+      let heroeId = (Object.values(tokens)
         .map((v) => String(v || ""))
         .find((v) => v.startsWith("#npc_dota_hero_")) || "")
-        .replace("#npc_dota_hero_", "").replace(/_/g, " ");
+        .replace("#npc_dota_hero_", "");
+      let heroe = heroeId.replace(/_/g, " ");
       if (!heroe && persona.rich_presence_string) {
         const m = String(persona.rich_presence_string).match(/(?:as|con)\s+(.+)$/i);
         if (m) heroe = m[1].trim();
       }
+      heroe = heroe.replace(/\b\w/g, (c) => c.toUpperCase()); // "crystal maiden" -> "Crystal Maiden"
 
       salida.set(accountId, {
         nombre,
@@ -232,6 +234,7 @@ class PresenciaSteam {
         crudo: tokens, // lo que mando Steam, para poder revisar la clasificacion
         // si esta mirando, el heroe que manda Dota es el del otro: no sirve
         heroe: situacion === "mirando" ? null : heroe || null,
+        heroe_id: situacion === "mirando" ? null : heroeId || null,
         partida: tokens.WatchableGameID || null,
       });
     }

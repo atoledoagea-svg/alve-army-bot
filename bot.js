@@ -15,6 +15,7 @@ const qrcode = require("qrcode-terminal");
 const baileys = require("@whiskeysockets/baileys");
 const { PresenciaSteam } = require("./steam-presencia.js");
 const { LobbyDota } = require("./dota-lobby.js");
+const { Marcador } = require("./marcador.js");
 const actualizador = require("./actualizador.js");
 
 const makeWASocket = baileys.default || baileys.makeWASocket;
@@ -458,6 +459,7 @@ async function enJuego(cfg, estado) {
 let vistosPorSteam = -1; // para no repetir el mismo aviso cada vuelta
 let avisoWeb = null;     // idem, para el estado del envio a la web
 let ultimaPresencia = new Map(); // lo ultimo que vio Steam, para publicarlo igual
+let marcador = null;     // el que sabe como va cada partida en curso
 let ultimaHuella = null; // para no reescribir lo mismo una y otra vez
 let ultimoEnvio = 0;
 
@@ -467,7 +469,8 @@ const LATIDO_MS = 12 * 60 * 1000; // como maximo, un envio cada 12 minutos
 /** Le manda a la web quien esta en partida, sin gastar escrituras al pedo. */
 async function publicarPresencia(cfg, actual, steamConectado) {
   const jugadores = [...actual.values()].map((i) => ({
-    nombre: i.nombre, situacion: i.situacion, heroe: i.heroe, crudo: i.crudo || null,
+    nombre: i.nombre, situacion: i.situacion, heroe: i.heroe,
+    heroe_id: i.heroe_id || null, marcador: i.marcador || null, crudo: i.crudo || null,
   }));
   const huella = JSON.stringify({ steam: Boolean(steamConectado), jugadores });
   const ahora = Date.now();
@@ -499,6 +502,29 @@ async function publicarPresencia(cfg, actual, steamConectado) {
   else log(`web: no acepto la presencia (${resultado})`);
 }
 
+/** Le agrega a cada uno como va su partida (marcador y minuto). */
+async function sumarMarcadores(actual) {
+  if (!marcador || !marcador.listo) return;
+  const enPartida = [...actual.values()].filter((i) => i.situacion === "partida" && i.partida);
+  if (!enPartida.length) return;
+  let juegos;
+  try {
+    juegos = await marcador.consultar(enPartida.map((i) => i.partida));
+  } catch (e) {
+    return; // sin marcador igual se muestra el heroe
+  }
+  for (const info of enPartida) {
+    const juego = juegos.get(String(info.partida));
+    if (!juego) continue;
+    // de que lado juega: lo dice la lista de jugadores del propio Dota
+    const aid = [...actual.entries()].find(([, v]) => v === info)?.[0];
+    const yo = juego.jugadores.find((j) => j.account_id === aid);
+    const aFavor = yo && !yo.radiant ? juego.dire : juego.radiant;
+    const enContra = yo && !yo.radiant ? juego.radiant : juego.dire;
+    info.marcador = { aFavor, enContra, minuto: juego.minuto };
+  }
+}
+
 /** Con la cuenta de Steam bot: avisa quien ENTRO EN PARTIDA (dato exacto). */
 async function revisarPartidas(cfg, estado, grupoId) {
   if (!presencia || !presencia.listo) return false;
@@ -508,6 +534,7 @@ async function revisarPartidas(cfg, estado, grupoId) {
   } catch (e) {
     return false;
   }
+  await sumarMarcadores(actual);
   ultimaPresencia = actual;
   const enPartida = [...actual.values()].filter((i) => i.situacion === "partida").length;
   if (actual.size !== vistosPorSteam) {
@@ -1466,6 +1493,10 @@ async function main() {
     log("steam: conectando la cuenta bot para ver quien entra en partida...");
     const ok = await presencia.conectar();
     if (!ok) log("steam: no pude conectar; sigo con el aviso aproximado (abrio el Dota)");
+    if (ok && presencia.cliente) {
+      marcador = new Marcador(presencia.cliente, log);
+      marcador.arrancar().catch(() => {}); // si falla, se pierde solo el marcador
+    }
   } else {
     log("steam: sin cuenta bot configurada (avisare cuando abran el Dota)");
   }
