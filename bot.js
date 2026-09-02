@@ -478,7 +478,10 @@ let enPresencia = false; // para que dos vueltas de presencia no se pisen
 let ultimoEnvio = 0;
 
 /** Le manda a la web quien esta en partida y con que heroe. */
-const LATIDO_MS = 12 * 60 * 1000; // como maximo, un envio cada 12 minutos
+// El latido tiene que ser mas corto que los 5 minutos que la web considera
+// fresco un dato: si no, cuando nadie cambia de estado la web lo descarta
+// por viejo y deja de mostrar quien esta jugando.
+const LATIDO_MS = 150 * 1000; // 2 minutos y medio
 
 /** Le manda a la web quien esta en partida, sin gastar escrituras al pedo. */
 async function publicarPresencia(cfg, actual, steamConectado) {
