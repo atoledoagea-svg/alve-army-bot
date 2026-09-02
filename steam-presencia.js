@@ -140,6 +140,35 @@ class PresenciaSteam {
    * @param {Array} jugadores  [{account_id, nombre}]
    * @returns {Map} accountId -> {nombre, situacion: 'partida'|'buscando'|'menu', heroe, partida}
    */
+  /** El estado de Dota de esos jugadores, pedido en el momento.
+   *
+   * Devuelve Map: steamid -> tokens. Vacio si Steam no contesta, y ahi se usa
+   * lo que tenga la ficha.
+   */
+  async presenciaDeDota(steamids) {
+    const salida = new Map();
+    if (!steamids.length) return salida;
+    let rp = null;
+    try {
+      rp = await new Promise((resolve) => {
+        const corte = setTimeout(() => resolve(null), 8000);
+        this.cliente.requestRichPresence(APPID_DOTA, steamids, (err, res) => {
+          clearTimeout(corte);
+          resolve(err ? null : res);
+        });
+      });
+    } catch (e) {
+      return salida;
+    }
+    for (const [steamid, datos] of Object.entries((rp && rp.users) || {})) {
+      const tokens = datos && datos.richPresence;
+      if (tokens && Object.keys(tokens).length) salida.set(steamid, tokens);
+    }
+    this.avisarUnaVez(`fresco${salida.size}/${steamids.length}`,
+      `steam: el detalle en vivo lo tengo de ${salida.size} de ${steamids.length} en el Dota`);
+    return salida;
+  }
+
   /** Escribe un aviso solo cuando cambia, para no llenar la consola. */
   avisarUnaVez(clave, texto) {
     if (this.ultimoAviso === clave) return;
@@ -206,14 +235,20 @@ class PresenciaSteam {
         }))).slice(0, 600));
     }
 
+    // El detalle de Dota se pide aparte y en el momento: la ficha lo pierde.
+    const frescos = await this.presenciaDeDota(enDota.map(([id]) => id));
+
     for (const [steamid, persona] of enDota) {
       const accountId = idDeCuenta(steamid);
       const nombre = porId.get(accountId);
       if (!nombre) continue;
 
-      const tokens = {};
-      for (const t of persona.rich_presence || []) {
-        if (t && t.key) tokens[t.key] = t.value;
+      let tokens = frescos.get(steamid) || null;
+      if (!tokens) {
+        tokens = {};
+        for (const t of persona.rich_presence || []) {
+          if (t && t.key) tokens[t.key] = t.value;
+        }
       }
       const status = tokens.status || "";
       // Sin nada de Steam no se puede decir que hace: mejor no informarlo y
