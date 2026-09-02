@@ -6,5 +6,5 @@ echo.
 echo  Voy a mandar al grupo el aviso de la ULTIMA partida jugada.
 echo  (Sirve para probar que todo funciona.)
 echo.
-node bot.js --probar-ultima
+node bot.js --probar-ultima %1
 pause

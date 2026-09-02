@@ -1336,11 +1336,22 @@ async function pasada(cfg, grupoId, vistas, ajustes, primera) {
 }
 
 /** Modo prueba: reenvia el aviso de la ultima partida jugada de la liga. */
-async function probarUltima(cfg, grupoId) {
+async function probarUltima(cfg, grupoId, quien) {
   const estado = await traerEstado(cfg);
-  log("buscando la ultima partida jugada por alguien de la liga...");
+  let jugadores = estado.jugadores;
+  if (quien) {
+    const buscado = quien.toLowerCase();
+    jugadores = estado.jugadores.filter((j) => j.nombre.toLowerCase().includes(buscado));
+    if (!jugadores.length) {
+      log(`no tengo a nadie que se llame "${quien}" en la liga`);
+      return;
+    }
+    log(`buscando la ultima partida de ${jugadores.map((j) => j.nombre).join(", ")}...`);
+  } else {
+    log("buscando la ultima partida jugada por alguien de la liga...");
+  }
   let ultima = null;
-  for (const j of estado.jugadores) {
+  for (const j of jugadores) {
     try {
       const partidas = await historial(cfg, j.account_id, 1);
       if (partidas && partidas.length) {
@@ -1402,7 +1413,10 @@ async function main() {
   }
 
   if (probarUltimaPartida) {
-    await probarUltima(cfg, grupoId);
+    // el nombre puede venir despues del flag: --probar-ultima Resolut1on
+    const i = process.argv.indexOf("--probar-ultima");
+    const quien = (process.argv[i + 1] || "").startsWith("--") ? null : process.argv[i + 1];
+    await probarUltima(cfg, grupoId, quien);
     process.exit(0);
   }
 
