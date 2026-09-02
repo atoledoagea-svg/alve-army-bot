@@ -42,6 +42,7 @@ class PresenciaSteam {
     this.cliente = null;
     this.listo = false;
     this.estado = new Map(); // accountId -> {situacion, heroe, partida}
+    this.dudas = new Map();  // lecturas flojas sin confirmar todavia
   }
 
   get activo() {
@@ -252,7 +253,33 @@ class PresenciaSteam {
       });
     }
     resumen();
-    return salida;
+    return this.estabilizar(salida);
+  }
+
+  /** Evita el parpadeo: bajar de jugando a menu necesita dos lecturas iguales.
+   *
+   * Steam a veces contesta a medias, y esa lectura floja hacia que alguien que
+   * estaba buscando partida apareciera en el menu por una vuelta y volviera.
+   */
+  estabilizar(nueva) {
+    const activo = (s) => s === "partida" || s === "buscando";
+    for (const [aid, antes] of this.estado) {
+      if (!activo(antes.situacion)) continue;
+      const ahora = nueva.get(aid);
+      if (ahora && activo(ahora.situacion)) {
+        this.dudas.delete(aid);
+        continue;
+      }
+      // dice que ya no esta jugando: se le da una vuelta de gracia
+      const veces = (this.dudas.get(aid) || 0) + 1;
+      if (veces < 2) {
+        this.dudas.set(aid, veces);
+        nueva.set(aid, antes); // se mantiene lo anterior hasta confirmar
+      } else {
+        this.dudas.delete(aid);
+      }
+    }
+    return nueva;
   }
 
   /**

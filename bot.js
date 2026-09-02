@@ -569,7 +569,7 @@ async function revisarSoloPresencia(cfg, grupoId) {
   try {
     const estado = await traerEstado(cfg);
     const hubo = await revisarPartidas(cfg, estado, grupoId);
-    if (!hubo) ultimaPresencia = new Map();
+    if (!hubo && (!presencia || !presencia.listo)) ultimaPresencia = new Map();
     if (cfg.admin_key) {
       await publicarPresencia(cfg, ultimaPresencia, Boolean(presencia && presencia.listo));
     }
@@ -1361,7 +1361,9 @@ async function pasada(cfg, grupoId, vistas, ajustes, primera) {
   if (!primera) {
     const exacto = await revisarPartidas(cfg, estado, grupoId);
     if (!exacto) {
-      ultimaPresencia = new Map(); // sin Steam no sabemos nada fino
+      // Steam no contesto en esta vuelta: se deja lo ultimo que si vimos, en vez
+      // de publicar una lista vacia que pise a la vuelta rapida de presencia.
+      if (!presencia || !presencia.listo) ultimaPresencia = new Map();
       await revisarEntradas(cfg, estado, grupoId);
     }
     // Se publica siempre, con Steam o sin Steam: asi la web distingue
