@@ -480,6 +480,7 @@ let marcador = null;     // el que sabe como va cada partida en curso
 let ultimaHuella = null; // para no reescribir lo mismo una y otra vez
 let enPresencia = false; // para que dos vueltas de presencia no se pisen
 let waConectado = false; // si WhatsApp esta enganchado, para poder verlo desde la web
+let versionBot = "?";     // que codigo esta corriendo, para verlo desde la web
 let ultimoEnvio = 0;
 
 /** Le manda a la web quien esta en partida y con que heroe. */
@@ -511,7 +512,7 @@ async function publicarPresencia(cfg, actual, steamConectado) {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ clave: cfg.admin_key, steam: Boolean(steamConectado),
-                             whatsapp: waConectado, jugadores }),
+                             whatsapp: waConectado, version: versionBot, jugadores }),
     });
     if (r.ok) resultado = "ok";
     else if (r.status === 403) resultado = "clave-mal";
@@ -1563,6 +1564,10 @@ async function main() {
   // se actualiza solo desde el repo, sin perder la sesion de WhatsApp
   // se actualiza sin avisarle al grupo: es ruido que no le importa a nadie
   actualizador.vigilar(BASE, log);
+  actualizador.version(BASE).then((v) => {
+    versionBot = v;
+    log(`version en uso: ${v}`);
+  }).catch(() => {});
 
   const vistas = cargarVistas();
   let primera = vistas.size === 0;

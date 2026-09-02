@@ -94,4 +94,10 @@ function reiniciar(dir) {
   process.exit(SALIDA_ACTUALIZADO);
 }
 
-module.exports = { vigilar, revisar, reiniciar, SALIDA_ACTUALIZADO };
+/** La version que esta corriendo (los primeros caracteres del commit). */
+async function version(dir) {
+  const v = await correr("git", ["rev-parse", "--short", "HEAD"], dir);
+  return v || "sin-git";
+}
+
+module.exports = { vigilar, revisar, reiniciar, version, SALIDA_ACTUALIZADO };
