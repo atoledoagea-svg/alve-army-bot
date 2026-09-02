@@ -34,9 +34,22 @@ async function revisar(dir, log) {
 
   log("actualizacion: hay una version nueva del bot, bajandola...");
   const lockAntes = leerLock(dir);
-  const tiron = await correr("git", ["pull", "--ff-only"], dir);
+  let tiron = await correr("git", ["pull", "--ff-only"], dir);
   if (tiron === null) {
-    log("actualizacion: no pude bajarla (hay cambios locales?). Sigo con esta version.");
+    // Suele pasar porque npm install toco package-lock.json y git se niega a
+    // pisarlo. En esta PC no hay nada propio que cuidar (la config, la sesion
+    // y el estado no estan versionados), asi que se descarta y se reintenta.
+    log("actualizacion: el pull se trabo con cambios locales; los descarto y reintento");
+    await correr("git", ["checkout", "--", "."], dir);
+    tiron = await correr("git", ["pull", "--ff-only"], dir);
+  }
+  if (tiron === null) {
+    // ultimo recurso: quedarse exactamente igual que el repositorio
+    log("actualizacion: sigo trabado; me alineo por la fuerza con el repositorio");
+    tiron = await correr("git", ["reset", "--hard", "@{u}"], dir);
+  }
+  if (tiron === null) {
+    log("actualizacion: no pude bajarla. Sigo con esta version.");
     return false;
   }
   if (leerLock(dir) !== lockAntes) {

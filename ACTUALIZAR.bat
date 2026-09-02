@@ -7,9 +7,17 @@ echo Bajando la ultima version...
 git pull --ff-only
 if errorlevel 1 (
   echo.
-  echo  No se pudo actualizar. Mandale una foto de esto a Agus.
-  pause
-  exit /b 1
+  echo  El pull se trabo con cambios locales. Los descarto y reintento...
+  echo  ^(la configuracion y la sesion de WhatsApp no se tocan: no estan en el repo^)
+  git checkout -- .
+  git fetch
+  git reset --hard origin/main
+  if errorlevel 1 (
+    echo.
+    echo  No se pudo actualizar. Mandale una foto de esto a Agus.
+    pause
+    exit /b 1
+  )
 )
 call npm install --omit=dev --no-audit --no-fund
 echo.
