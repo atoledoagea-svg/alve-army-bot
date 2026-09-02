@@ -22,6 +22,9 @@ const APPID_DOTA_NUM = 570;
 const EN_PARTIDA = ["#DOTA_RP_PLAYING_AS", "#DOTA_RP_HERO_SELECTION", "#DOTA_RP_STRATEGY_TIME",
                     "#DOTA_RP_PREGAME", "#DOTA_RP_WAIT_FOR_PLAYERS_TO_LOAD"];
 const BUSCANDO = ["#DOTA_RP_FINDING_MATCH", "#DOTA_RP_WAIT_FOR_READY_CHECK"];
+// mirar un replay o espectear no es jugar, aunque Dota mande la partida
+const MIRANDO = ["#DOTA_RP_SPECTATING", "#DOTA_RP_WATCHING_REPLAY", "#DOTA_RP_WATCHING_GAME",
+                 "#DOTA_RP_WATCHING_TOURNAMENT", "#DOTA_RP_CASTING"];
 
 const idDeCuenta = (steamid) => Number(BigInt(steamid) - STEAM64_OFFSET);
 const aSteam64 = (accountId) => String(BigInt(accountId) + STEAM64_OFFSET);
@@ -207,8 +210,11 @@ class PresenciaSteam {
       const status = tokens.status || "";
 
       let situacion = "menu";
-      if (EN_PARTIDA.includes(status) || tokens.WatchableGameID) situacion = "partida";
+      if (MIRANDO.includes(status)) situacion = "mirando";
+      else if (EN_PARTIDA.includes(status)) situacion = "partida";
       else if (BUSCANDO.includes(status)) situacion = "buscando";
+      // la partida mirable solo cuenta si no esta de espectador
+      else if (tokens.WatchableGameID) situacion = "partida";
 
       // el heroe puede venir en cualquiera de los tokens, o dentro del texto armado
       let heroe = (Object.values(tokens)
@@ -223,7 +229,8 @@ class PresenciaSteam {
       salida.set(accountId, {
         nombre,
         situacion,
-        heroe: heroe || null,
+        // si esta mirando, el heroe que manda Dota es el del otro: no sirve
+        heroe: situacion === "mirando" ? null : heroe || null,
         partida: tokens.WatchableGameID || null,
       });
     }
