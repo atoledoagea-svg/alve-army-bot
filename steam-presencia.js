@@ -256,13 +256,17 @@ class PresenciaSteam {
    */
   novedades(actual) {
     const entraron = [];
+    const buscando = [];
     for (const [accountId, info] of actual) {
       const antes = this.estado.get(accountId);
-      if (info.situacion === "partida" && (!antes || antes.situacion !== "partida")) {
-        entraron.push(info.nombre);
-      }
+      const cambio = !antes || antes.situacion !== info.situacion;
+      if (info.situacion === "partida" && cambio) entraron.push(info.nombre);
+      if (info.situacion === "buscando" && cambio) buscando.push(info.nombre);
     }
     this.estado = actual;
+    // compatible con el uso viejo: la lista de los que entraron sigue siendo
+    // lo que devuelve, y los que buscan viajan como propiedad aparte
+    entraron.buscando = buscando;
     return entraron;
   }
 }

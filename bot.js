@@ -456,6 +456,17 @@ async function enJuego(cfg, estado) {
     .sort();
 }
 
+const ESPERA_BUSCANDO_MS = 20 * 60 * 1000; // no repetir "esta buscando" antes de esto
+const avisadosBuscando = new Map();
+
+/** true si a ese ya lo anunciamos buscando hace poco. */
+function yaAvisado(nombre) {
+  const antes = avisadosBuscando.get(nombre) || 0;
+  if (Date.now() - antes < ESPERA_BUSCANDO_MS) return true;
+  avisadosBuscando.set(nombre, Date.now());
+  return false;
+}
+
 let vistosPorSteam = -1; // para no repetir el mismo aviso cada vuelta
 let avisoWeb = null;     // idem, para el estado del envio a la web
 let ultimaPresencia = new Map(); // lo ultimo que vio Steam, para publicarlo igual
@@ -558,11 +569,23 @@ async function revisarPartidas(cfg, estado, grupoId) {
   }
 
   const entraron = presencia.novedades(actual);
+  const avisos = [];
   if (entraron.length) {
-    const texto = entraron.length === 1
+    avisos.push(entraron.length === 1
       ? `\u2694\uFE0F Entro en Partida: ${entraron[0]}`
-      : `\u2694\uFE0F Entraron en Partida: ${entraron.join(", ")}`;
-    log(texto);
+      : `\u2694\uFE0F Entraron en Partida: ${entraron.join(", ")}`);
+  }
+  // los que se acaban de poner en la cola, sin repetir al mismo cada vuelta
+  const buscan = (entraron.buscando || []).filter((n) => !yaAvisado(n));
+  if (buscan.length) {
+    avisos.push(buscan.length === 1
+      ? `\u{1F50D} Buscando partida: ${buscan[0]}` +
+        "\nSi alguien se prende, es el momento"
+      : `\u{1F50D} Buscando partida: ${buscan.join(", ")}` +
+        "\nSe esta armando, sumense");
+  }
+  for (const texto of avisos) {
+    log(texto.replace(/\n/g, " | "));
     if (grupoId) {
       const activo = await asegurarConexion(cfg);
       await activo.sendMessage(grupoId, { text: texto });
