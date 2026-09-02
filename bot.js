@@ -330,6 +330,9 @@ function eventosDePartida(cfg, estado, detalle, matchId, ajustes) {
 
 // Estado de la conexion: si WhatsApp se cae, la proxima vuelta reconecta sola.
 const wa = { sock: null, conectado: false };
+// Con que hay que volver a enganchar el oyente cuando WhatsApp reconecta:
+// si no, el bot sigue escribiendo por la conexion nueva pero escucha en la vieja.
+let escuchando = null;
 
 function salirPorSesionCerrada() {
   console.error(
@@ -367,6 +370,10 @@ function intentarConectar(cfg) {
         waConectado = true;
         abierto = true;
         wa.sock = sock;
+        if (escuchando) {
+          escucharPreguntas(sock, escuchando.cfg, escuchando.grupoId);
+          log("comandos del grupo: escuchando de nuevo");
+        }
         wa.conectado = true;
         log("WhatsApp conectado");
         resolve(sock);
@@ -1561,6 +1568,7 @@ async function main() {
     sock = await conectarWhatsApp(cfg);
     grupoId = await elegirGrupo(sock, cfg);
     log(`avisare en el grupo: ${cfg.grupo_nombre || grupoId}`);
+    escuchando = { cfg, grupoId };   // para volver a engancharlo si se reconecta
     escucharPreguntas(sock, cfg, grupoId);
     log('comandos del grupo: !tabla, !yo, !soy, !jugando, !puntero, !premios, !duplas, !frase, !lobby, !amigos, !ayuda');
   } else {
