@@ -741,6 +741,22 @@ async function textoDuplas(cfg) {
   return partes.join("\n");
 }
 
+/** El que mas se hunde en el mes: el ancla. */
+async function textoAncla(cfg) {
+  const estado = await traerEstado(cfg);
+  const filas = estado.ancla || [];
+  if (!filas.length) {
+    return "Todavia no hay partidas de este mes, asi que no hay ancla.";
+  }
+  const partes = ["\u2693 *EL ANCLA DEL MES*", ""];
+  filas.forEach((f, i) => {
+    const marca = i === 0 ? "\u2693" : "\u2022";
+    partes.push(`${marca} ${f.nombre}: ${f.muertes} muertes en ${f.pj} partidas`);
+  });
+  partes.push("", "El que mas muere en el mes, contando todas las partidas.");
+  return partes.join("\n");
+}
+
 /** Quien tiene agregado al bot de Steam y quien no. */
 async function textoAmigos(cfg) {
   if (!presencia || !presencia.listo) {
@@ -866,6 +882,10 @@ function textoCeremonia(pr) {
     l.push(`\u{1F4A9} El que mas perdio: ${pr.mas_derrotas.nombre}, ${pr.mas_derrotas.p} derrotas`);
   }
   if (pr.cagon) l.push(`\u{1F414} Cagon del mes: ${pr.cagon.nombre}, ${pr.cagon.n} partidas escapandole a la ranked`);
+  if (pr.ancla) {
+    l.push(`\u2693 El ancla del mes: ${pr.ancla.nombre}, ${pr.ancla.muertes} muertes ` +
+           `en ${pr.ancla.pj} partidas`);
+  }
   if (pr.dupla) {
     l.push(`\u{1F46B} Mejor dupla: ${pr.dupla.quienes.join(" + ")} ` +
            `(${pr.dupla.ganadas}-${pr.dupla.pj - pr.dupla.ganadas} juntos)`);
@@ -988,6 +1008,9 @@ function escucharPreguntas(sock, cfg, grupoId) {
         } else if (texto.startsWith("!duplas") || texto.startsWith("!duplas")) {
           log("comando: !duplas");
           await sock.sendMessage(grupoId, { text: await textoDuplas(cfg) });
+        } else if (texto.startsWith("!ancla")) {
+          log("comando: !ancla");
+          await sock.sendMessage(grupoId, { text: await textoAncla(cfg) });
         } else if (texto.startsWith("!premios")) {
           log("comando: !premios");
           let pr = null;
@@ -1142,6 +1165,7 @@ const AYUDA =
   "*!puntero* - quien va primero en cada tabla\n" +
   "*!premios* - los premios del ultimo mes\n" +
   "*!duplas* - las mejores y peores parejas\n" +
+  "*!ancla* - el que mas se hunde este mes\n" +
   "*!amigos* - quien agrego al bot de Steam\n" +
   "*!ayuda* - esta lista";
 
@@ -1570,7 +1594,7 @@ async function main() {
     log(`avisare en el grupo: ${cfg.grupo_nombre || grupoId}`);
     escuchando = { cfg, grupoId };   // para volver a engancharlo si se reconecta
     escucharPreguntas(sock, cfg, grupoId);
-    log('comandos del grupo: !tabla, !yo, !soy, !jugando, !puntero, !premios, !duplas, !frase, !lobby, !amigos, !ayuda');
+    log('comandos del grupo: !tabla, !yo, !soy, !jugando, !puntero, !premios, !duplas, !ancla, !frase, !lobby, !amigos, !ayuda');
   } else {
     log("MODO PRUEBA: no se conecta a WhatsApp, solo muestra los avisos");
   }
@@ -1586,6 +1610,7 @@ async function main() {
   if (process.argv.includes("--probar-comandos")) {
     console.log("\n--- !tabla ---\n" + (await textoTabla(cfg)));
     console.log("\n--- !yo (forzando un nombre) ---\n" + (await textoYo(cfg, "test", "Nahuelios")));
+    console.log("\n--- !ancla ---\n" + (await textoAncla(cfg)));
     console.log("\n--- !ayuda ---\n" + AYUDA);
     process.exit(0);
   }
