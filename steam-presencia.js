@@ -229,6 +229,7 @@ class PresenciaSteam {
       salida.set(accountId, {
         nombre,
         situacion,
+        crudo: tokens, // lo que mando Steam, para poder revisar la clasificacion
         // si esta mirando, el heroe que manda Dota es el del otro: no sirve
         heroe: situacion === "mirando" ? null : heroe || null,
         partida: tokens.WatchableGameID || null,

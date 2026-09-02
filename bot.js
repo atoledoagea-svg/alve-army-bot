@@ -467,7 +467,7 @@ const LATIDO_MS = 12 * 60 * 1000; // como maximo, un envio cada 12 minutos
 /** Le manda a la web quien esta en partida, sin gastar escrituras al pedo. */
 async function publicarPresencia(cfg, actual, steamConectado) {
   const jugadores = [...actual.values()].map((i) => ({
-    nombre: i.nombre, situacion: i.situacion, heroe: i.heroe,
+    nombre: i.nombre, situacion: i.situacion, heroe: i.heroe, crudo: i.crudo || null,
   }));
   const huella = JSON.stringify({ steam: Boolean(steamConectado), jugadores });
   const ahora = Date.now();
