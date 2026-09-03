@@ -9,6 +9,7 @@
 
 const fs = require("fs");
 const path = require("path");
+const crypto = require("crypto");
 const readline = require("readline");
 const P = require("pino");
 const qrcode = require("qrcode-terminal");
@@ -201,6 +202,49 @@ function contarFrases(f) {
 }
 
 /** Cargada o festejo segun como le fue en la partida. */
+let ultimaFrase = null;    // la cargada que salio en el ultimo aviso
+let VOCES = null;          // {hash: texto} de las cargadas grabadas
+let vocesAl = 0;
+
+/** El indice de cargadas con audio, cacheado un rato. */
+async function traerVoces(cfg) {
+  const ahora = Date.now();
+  if (VOCES && ahora - vocesAl < 10 * 60 * 1000) return VOCES;
+  try {
+    VOCES = await traerJSON(`${cfg.web_publica}/voz/index.json`);
+    vocesAl = ahora;
+  } catch (e) {
+    if (!VOCES) VOCES = {};
+  }
+  return VOCES;
+}
+
+/** La URL de la nota de voz de esa cargada, si esta grabada. */
+async function audioDeFrase(cfg, frase) {
+  if (cfg.voz === false || !frase) return null;
+  const clave = crypto.createHash("sha1").update(frase.trim(), "utf8")
+    .digest("hex").slice(0, 16);
+  const voces = await traerVoces(cfg);
+  return voces[clave] ? `${cfg.web_publica}/voz/${clave}.ogg` : null;
+}
+
+/** Manda la cargada como nota de voz, si la tenemos grabada. */
+async function mandarVoz(cfg, grupoId, frase) {
+  if (!grupoId) return;
+  const url = await audioDeFrase(cfg, frase);
+  if (!url) return;
+  try {
+    const activo = await asegurarConexion(cfg);
+    await activo.sendMessage(grupoId, {
+      audio: { url },
+      mimetype: "audio/ogg; codecs=opus",
+      ptt: true,
+    });
+  } catch (e) {
+    log(`no pude mandar la nota de voz (${e.message})`);
+  }
+}
+
 async function frasePara(cfg, ev) {
   const f = await cargarFrases(cfg);
   const k = ev.k || 0;
@@ -257,6 +301,7 @@ async function lineaEvento(cfg, ev, total) {
   partes.push(cierre);
   let linea = partes.join(" · ");
   const frase = await frasePara(cfg, ev);
+  ultimaFrase = frase || null;
   if (frase) linea += ` — ${frase}`;
   if (!ev.gano) linea += ` ${EMOJI_DERROTA}`;
   return linea;
@@ -274,6 +319,7 @@ async function lineaCasual(cfg, ev) {
   partes.push("sin puntos");
   let linea = partes.join(" \u00b7 ");
   const frase = await frasePara(cfg, ev);
+  ultimaFrase = frase || null;
   if (frase) linea += ` \u2014 ${frase}`;
   if (!ev.gano) linea += ` ${EMOJI_DERROTA}`;
   return linea;
@@ -1545,6 +1591,7 @@ async function pasada(cfg, grupoId, vistas, ajustes, primera) {
       if (grupoId) {
         const activo = await asegurarConexion(cfg);
         await activo.sendMessage(grupoId, { text: texto });
+        await mandarVoz(cfg, grupoId, ultimaFrase);
       }
       avisos++;
     }
