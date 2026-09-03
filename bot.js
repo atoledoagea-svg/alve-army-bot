@@ -232,6 +232,28 @@ async function audioDeFrase(cfg, frase) {
   return voces[clave] ? `${cfg.web_publica}/voz/${clave}.ogg` : null;
 }
 
+let PROPIOS = null;        // {jugador: [{archivo, texto}]} grabados por el grupo
+let propiosAl = 0;
+
+/** Un audio propio de ese jugador, si le cargaron alguno. */
+async function audioPropio(cfg, nombre) {
+  const ahora = Date.now();
+  if (!PROPIOS || ahora - propiosAl > 10 * 60 * 1000) {
+    try {
+      PROPIOS = await traerJSON(`${cfg.web_publica}/voz/propios.json`);
+      propiosAl = ahora;
+    } catch (e) {
+      if (!PROPIOS) PROPIOS = {};
+    }
+  }
+  const clave = Object.keys(PROPIOS).find(
+    (k) => k.toLowerCase() === nombre.toLowerCase());
+  const lista = clave ? PROPIOS[clave] : null;
+  if (!lista || !lista.length) return null;
+  const uno = lista[Math.floor(Math.random() * lista.length)];
+  return { url: `${cfg.web_publica}/voz/propios/${uno.archivo}`, texto: uno.texto };
+}
+
 /** Manda la cargada como nota de voz, si la tenemos grabada. */
 async function mandarVoz(cfg, grupoId, frase) {
   if (!grupoId) return;
@@ -519,17 +541,6 @@ async function enJuego(cfg, estado) {
     .sort();
 }
 
-const ESPERA_BUSCANDO_MS = 20 * 60 * 1000; // no repetir "esta buscando" antes de esto
-const avisadosBuscando = new Map();
-
-/** true si a ese ya lo anunciamos buscando hace poco. */
-function yaAvisado(nombre) {
-  const antes = avisadosBuscando.get(nombre) || 0;
-  if (Date.now() - antes < ESPERA_BUSCANDO_MS) return true;
-  avisadosBuscando.set(nombre, Date.now());
-  return false;
-}
-
 let vistosPorSteam = -1; // para no repetir el mismo aviso cada vuelta
 let avisoWeb = null;     // idem, para el estado del envio a la web
 let ultimaPresencia = new Map(); // lo ultimo que vio Steam, para publicarlo igual
@@ -684,25 +695,9 @@ async function revisarPartidas(cfg, estado, grupoId) {
         `o tienen los detalles del juego en privado.`);
   }
 
-  const entraron = presencia.novedades(actual);
-  const avisos = [];
-  // el aviso de "entro en partida" se saco: llenaba el grupo sin aportar nada.
-  // Queda el de la cola, que es el momento en que alguien todavia se puede sumar.
-  const buscan = (entraron.buscando || []).filter((n) => !yaAvisado(n));
-  if (buscan.length) {
-    avisos.push(buscan.length === 1
-      ? `\u{1F50D} Buscando partida: ${buscan[0]}` +
-        "\nSi alguien se prende, es el momento"
-      : `\u{1F50D} Buscando partida: ${buscan.join(", ")}` +
-        "\nSe esta armando, sumense");
-  }
-  for (const texto of avisos) {
-    log(texto.replace(/\n/g, " | "));
-    if (grupoId) {
-      const activo = await asegurarConexion(cfg);
-      await activo.sendMessage(grupoId, { text: texto });
-    }
-  }
+  // Ya no se avisa nada de la presencia: ni "entro en partida" ni "buscando
+  // partida". Quien esta jugando o buscando se ve en la web y con !jugando.
+  presencia.novedades(actual);   // se consume igual, para no acumular novedades
   return true; // la cuenta bot se encarga: no hace falta el aviso aproximado
 }
 
@@ -1205,9 +1200,23 @@ async function comandoSoy(cfg, jid, texto) {
 /** Una cargada para ese jugador: la manda escrita y, si esta grabada, hablada. */
 async function cargadaDe(cfg, sock, grupoId, nombre) {
   const estado = await traerEstado(cfg);
-  const jugador = (estado.jugadores || []).find(
-    (j) => j.nombre.toLowerCase() === nombre.toLowerCase());
+  const busco = nombre.toLowerCase();
+  const jugadores = estado.jugadores || [];
+  const jugador = jugadores.find((j) => j.nombre.toLowerCase() === busco)
+    || jugadores.find((j) => j.nombre.toLowerCase().startsWith(busco))
+    || jugadores.find((j) => j.nombre.toLowerCase().includes(busco));
   if (!jugador) return false;
+
+  // primero los audios que grabaron ustedes para ese jugador
+  const propio = await audioPropio(cfg, jugador.nombre);
+  if (propio) {
+    await sock.sendMessage(grupoId, {
+      audio: { url: propio.url },
+      mimetype: "audio/ogg; codecs=opus",
+      ptt: true,
+    });
+    return true;
+  }
 
   const f = await cargarFrases(cfg);
   const propias = {};
