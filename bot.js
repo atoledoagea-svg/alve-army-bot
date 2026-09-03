@@ -879,12 +879,15 @@ async function revisarAncla(cfg, estado, grupoId, callado) {
   } catch (e) {
     log(`no pude anotar el ancla (${e.message})`);
   }
-  if (callado || !antes || antes.nombre === lider.nombre) return 0;
+  if (antes && antes.nombre === lider.nombre) return 0;
+  if (callado && antes) return 0;   // sin novedad al arrancar
 
-  const texto =
-    `\u2693 *NUEVA ANCLA DEL MES*: ${lider.nombre} con ${lider.muertes} muertes\n` +
-    `Le saco el puesto a ${antes.nombre} (${antes.muertes} muertes)\n` +
-    `El que mas muere en el mes, contando todas las partidas.`;
+  const texto = antes
+    ? `\u2693 *NUEVA ANCLA DEL MES*: ${lider.nombre} con ${lider.muertes} muertes\n` +
+      `Le saco el puesto a ${antes.nombre} (${antes.muertes} muertes)\n` +
+      `El que mas muere en el mes, contando todas las partidas.`
+    : `\u2693 *EL ANCLA DEL MES*: ${lider.nombre} con ${lider.muertes} muertes\n` +
+      `El que mas muere en el mes, contando todas las partidas.`;
   log(texto.replace(/\n/g, " | "));
   if (grupoId) {
     const activo = await asegurarConexion(cfg);
@@ -1638,6 +1641,14 @@ async function main() {
     const i = process.argv.indexOf("--probar-ultima");
     const quien = (process.argv[i + 1] || "").startsWith("--") ? null : process.argv[i + 1];
     await probarUltima(cfg, grupoId, quien);
+    process.exit(0);
+  }
+
+  if (process.argv.includes("--anunciar-ancla")) {
+    const activo = await asegurarConexion(cfg);
+    const grupoId = await elegirGrupo(activo, cfg);
+    await activo.sendMessage(grupoId, { text: await textoAncla(cfg) });
+    log("ancla anunciada en el grupo");
     process.exit(0);
   }
 
