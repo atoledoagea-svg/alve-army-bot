@@ -29,6 +29,7 @@ const VISTO_PATH = path.join(BASE, "partidas-vistas.json");
 const SESION_DIR = path.join(BASE, "sesion-whatsapp");
 const RECAP_PATH = path.join(BASE, "ultimo-recap.json");
 const PUNTERO_PATH = path.join(BASE, "punteros.json");
+const ANCLA_PATH = path.join(BASE, "ancla.json");
 const PREMIOS_PATH = path.join(BASE, "ultimo-premio.json");
 const ORDEN_PATH = path.join(BASE, "ultima-orden.json");
 const QUIEN_PATH = path.join(BASE, "quien-es-quien.json");
@@ -861,6 +862,37 @@ async function revisarPuntero(cfg, estado, grupoId, callado) {
   return avisos.length;
 }
 
+/** Si cambio el que va primero en el ancla, lo canta en el grupo. */
+async function revisarAncla(cfg, estado, grupoId, callado) {
+  const lider = (estado.ancla || [])[0];
+  if (!lider || !lider.nombre) return 0;
+
+  let antes = null;
+  try {
+    antes = JSON.parse(fs.readFileSync(ANCLA_PATH, "utf8"));
+  } catch (e) {
+    antes = null; // primera vez: solo anotamos
+  }
+  try {
+    fs.writeFileSync(ANCLA_PATH,
+      JSON.stringify({ nombre: lider.nombre, muertes: lider.muertes }), "utf8");
+  } catch (e) {
+    log(`no pude anotar el ancla (${e.message})`);
+  }
+  if (callado || !antes || antes.nombre === lider.nombre) return 0;
+
+  const texto =
+    `\u2693 *NUEVA ANCLA DEL MES*: ${lider.nombre} con ${lider.muertes} muertes\n` +
+    `Le saco el puesto a ${antes.nombre} (${antes.muertes} muertes)\n` +
+    `El que mas muere en el mes, contando todas las partidas.`;
+  log(texto.replace(/\n/g, " | "));
+  if (grupoId) {
+    const activo = await asegurarConexion(cfg);
+    await activo.sendMessage(grupoId, { text: texto });
+  }
+  return 1;
+}
+
 const MEDALLAS = ["\u{1F947}", "\u{1F948}", "\u{1F949}"];
 
 /** El mensaje de premiacion del mes que cerro. */
@@ -1480,6 +1512,7 @@ async function pasada(cfg, grupoId, vistas, ajustes, primera) {
   if (primera) {
     guardarVistas(vistas);
     await revisarPuntero(cfg, estado, grupoId, true); // solo anotar, sin cantar
+    await revisarAncla(cfg, estado, grupoId, true);   // idem con el ancla
     await revisarOrden(cfg, grupoId, true);
     if (!fs.existsSync(PREMIOS_PATH)) {
       // primera vez: anota el mes publicado sin cantarlo, para no revivir premios viejos
@@ -1516,6 +1549,7 @@ async function pasada(cfg, grupoId, vistas, ajustes, primera) {
   }
   guardarVistas(vistas);
   avisos += await revisarPuntero(cfg, estado, grupoId, false);
+  avisos += await revisarAncla(cfg, estado, grupoId, false);
   if (await revisarPremios(cfg, grupoId)) avisos++;
   await revisarOrden(cfg, grupoId, false);
   return avisos;
