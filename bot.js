@@ -202,7 +202,6 @@ function contarFrases(f) {
 }
 
 /** Cargada o festejo segun como le fue en la partida. */
-let ultimaFrase = null;    // la cargada que salio en el ultimo aviso
 let VOCES = null;          // {hash: texto} de las cargadas grabadas
 let vocesAl = 0;
 
@@ -219,11 +218,16 @@ async function traerVoces(cfg) {
   return VOCES;
 }
 
+/** El nombre del archivo de audio de una frase (igual que lo calcula la liga). */
+function claveDeFrase(frase) {
+  return crypto.createHash("sha1").update(frase.trim(), "utf8")
+    .digest("hex").slice(0, 16);
+}
+
 /** La URL de la nota de voz de esa cargada, si esta grabada. */
 async function audioDeFrase(cfg, frase) {
   if (cfg.voz === false || !frase) return null;
-  const clave = crypto.createHash("sha1").update(frase.trim(), "utf8")
-    .digest("hex").slice(0, 16);
+  const clave = claveDeFrase(frase);
   const voces = await traerVoces(cfg);
   return voces[clave] ? `${cfg.web_publica}/voz/${clave}.ogg` : null;
 }
@@ -301,7 +305,6 @@ async function lineaEvento(cfg, ev, total) {
   partes.push(cierre);
   let linea = partes.join(" · ");
   const frase = await frasePara(cfg, ev);
-  ultimaFrase = frase || null;
   if (frase) linea += ` — ${frase}`;
   if (!ev.gano) linea += ` ${EMOJI_DERROTA}`;
   return linea;
@@ -319,7 +322,6 @@ async function lineaCasual(cfg, ev) {
   partes.push("sin puntos");
   let linea = partes.join(" \u00b7 ");
   const frase = await frasePara(cfg, ev);
-  ultimaFrase = frase || null;
   if (frase) linea += ` \u2014 ${frase}`;
   if (!ev.gano) linea += ` ${EMOJI_DERROTA}`;
   return linea;
@@ -1082,7 +1084,13 @@ function escucharPreguntas(sock, cfg, grupoId) {
           await sock.sendMessage(grupoId, { text: await textoYo(cfg, quienEscribe, forzado) });
         } else if (texto.startsWith("!frase")) {
           log(`comando: ${texto}`);
-          await sock.sendMessage(grupoId, { text: await comandoFrase(cfg, texto, autor) });
+          // "!frase rage" (un nombre solo) pide una cargada; con mas texto, la agrega
+          const soloNombre = texto.replace(/^!frase\s*/i, "").trim();
+          const pedida = soloNombre && !soloNombre.includes(" ")
+            && await cargadaDe(cfg, sock, grupoId, soloNombre);
+          if (!pedida) {
+            await sock.sendMessage(grupoId, { text: await comandoFrase(cfg, texto, autor) });
+          }
         } else if (texto.startsWith("!puntero") || texto.startsWith("!lider")) {
           log("comando: !puntero");
           await sock.sendMessage(grupoId, { text: textoPuntero(await traerEstado(cfg)) });
@@ -1194,6 +1202,37 @@ async function comandoSoy(cfg, jid, texto) {
   return `Listo, te tengo anotado como *${j.nombre}*. Ahora podes escribir *!yo*.`;
 }
 
+/** Una cargada para ese jugador: la manda escrita y, si esta grabada, hablada. */
+async function cargadaDe(cfg, sock, grupoId, nombre) {
+  const estado = await traerEstado(cfg);
+  const jugador = (estado.jugadores || []).find(
+    (j) => j.nombre.toLowerCase() === nombre.toLowerCase());
+  if (!jugador) return false;
+
+  const f = await cargarFrases(cfg);
+  const propias = {};
+  for (const [n, v] of Object.entries(f.por_jugador || {})) propias[n.toLowerCase()] = v;
+  const mias = propias[jugador.nombre.toLowerCase()] || {};
+  const suyas = [].concat(mias.siempre || [], mias.derrota || [], mias.victoria || []);
+  const generales = [].concat(f.derrota || [], f.victoria || []);
+
+  // las que no llevan datos de la partida adentro: son las que se pueden decir
+  const decibles = (lista) => lista.filter((t) => t && !/\{\w+\}/.test(t));
+  const voces = await traerVoces(cfg);
+  const grabadas = (lista) => lista.filter((t) => voces[claveDeFrase(t)]);
+
+  // primero las suyas grabadas, despues las suyas, despues cualquiera grabada
+  const pool = [grabadas(decibles(suyas)), decibles(suyas),
+                grabadas(decibles(generales)), decibles(generales)]
+    .find((l) => l.length);
+  if (!pool) return false;
+
+  const frase = pool[Math.floor(Math.random() * pool.length)];
+  await sock.sendMessage(grupoId, { text: `\u{1F4AC} ${jugador.nombre}: ${frase}` });
+  await mandarVoz(cfg, grupoId, frase);
+  return true;
+}
+
 /** !frase ... — manda una cargada a la liga. */
 async function comandoFrase(cfg, texto, autor) {
   let resto = texto.replace(/^!frase\s*/i, "").trim();
@@ -1241,6 +1280,7 @@ const AYUDA =
   "*!yo* - como venis vos\n" +
   "*!soy Nombre* - vincular tu WhatsApp con la liga\n" +
   "*!jugando* - quien tiene el Dota abierto\n" +
+  "*!frase Nombre* - una cargada para ese, con audio\n" +
   "*!frase* algo - agregar una cargada\n" +
   "*!lobby* - crear la lobby de la liga\n" +
   "*!puntero* - quien va primero en cada tabla\n" +
@@ -1591,7 +1631,6 @@ async function pasada(cfg, grupoId, vistas, ajustes, primera) {
       if (grupoId) {
         const activo = await asegurarConexion(cfg);
         await activo.sendMessage(grupoId, { text: texto });
-        await mandarVoz(cfg, grupoId, ultimaFrase);
       }
       avisos++;
     }
