@@ -1106,7 +1106,9 @@ async function revisarDicho(cfg, orden, grupoId, callado) {
     log(`no pude anotar el pedido (${e.message})`);
   }
   if (ultima === pedido.marca) return false;
-  if (callado || ultima === null) return false;  // al arrancar solo se anota
+  // al arrancar no se revive un pedido viejo, pero uno recien hecho si se dice
+  const fresco = Date.now() / 1000 - pedido.marca < 30 * 60;
+  if (callado || (ultima === null && !fresco)) return false;
 
   const texto = await DICHOS[pedido.que](cfg);
   log(`la web pidio decir "${pedido.que}"`);
