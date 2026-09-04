@@ -271,6 +271,49 @@ async function mandarVoz(cfg, grupoId, frase) {
   }
 }
 
+/** Compara un dato de la partida con lo que pide la frase. */
+function comparaDato(valor, condicion) {
+  if (typeof condicion === "boolean") return Boolean(valor) === condicion;
+  if (Array.isArray(condicion)) return condicion.some((c) => comparaDato(valor, c));
+  if (typeof condicion === "number") return valor !== null && Number(valor) === condicion;
+  const texto = String(condicion).trim();
+  for (const op of [">=", "<=", "!=", "==", ">", "<"]) {
+    if (texto.startsWith(op)) {
+      const a = Number(valor), c = Number(texto.slice(op.length).trim());
+      if (!isFinite(a) || !isFinite(c)) return false;
+      return { ">=": a >= c, "<=": a <= c, "!=": a !== c,
+               "==": a === c, ">": a > c, "<": a < c }[op];
+    }
+  }
+  if (valor === null || valor === undefined) return false;
+  return String(valor).trim().toLowerCase() === texto.toLowerCase();
+}
+
+/** Todo lo que una frase puede mirar (y escribir) de la partida. */
+async function datosDePartida(cfg, ev) {
+  const k = ev.k || 0, d = ev.d || 0, a = ev.a || 0;
+  const propio = ev.score ? ev.score[0] : 0;
+  const rival = ev.score ? ev.score[1] : 0;
+  return {
+    nombre: ev.nombre || "", jugador: ev.nombre || "",
+    heroe: ev.hero ? await nombreHeroe(cfg, ev.hero) : "",
+    k, d, a, kills: k, muertes: d, asistencias: a,
+    kda: d ? Math.round(((k + a) / d) * 10) / 10 : k + a,
+    minutos: Math.round((ev.dur || 0) / 60),
+    puntos: ev.puntos || 0, total: ev.total,
+    score: propio, score_rival: rival, dif: Math.abs(propio - rival),
+    gano: Boolean(ev.gano),
+    modo: ev.modo === "liga" ? "lobby" : (ev.modo === "casual" ? (ev.juego || "casual") : "ranked"),
+    resultado: ev.gano ? "gano" : "perdio",
+  };
+}
+
+/** Reemplaza los {datos} de la frase; lo que no conoce, lo deja como esta. */
+function escribirFrase(texto, datos) {
+  return texto.replace(/{(\w+)}/g, (todo, clave) =>
+    datos[clave] === undefined || datos[clave] === null ? todo : String(datos[clave]));
+}
+
 async function frasePara(cfg, ev) {
   const f = await cargarFrases(cfg);
   const k = ev.k || 0;
@@ -292,6 +335,17 @@ async function frasePara(cfg, ev) {
   }
   if ((ev.dur || 0) >= 55 * 60) pool = pool.concat(f.eterna || []);
 
+  // las frases con condiciones: solo si se cumple todo lo que piden
+  const datos = await datosDePartida(cfg, ev);
+  for (const regla of f.condicionales || []) {
+    if (!regla || !regla.texto) continue;
+    const condiciones = regla.si || {};
+    const cumple = Object.entries(condiciones).every(
+      ([campo, valor]) => campo in datos && comparaDato(datos[campo], valor));
+    if (!cumple) continue;
+    for (let i = 0; i < Math.max(1, regla.peso || 1); i++) pool.push(regla.texto);
+  }
+
   // las recien agregadas pesan mas, para que se luzcan
   const extra = f._peso_reciente || 3;
   for (const r of f._recientes || []) {
@@ -304,17 +358,12 @@ async function frasePara(cfg, ev) {
   }
   if (!pool.length) return "";
   const elegida = pool[Math.floor(Math.random() * pool.length)];
-  return elegida
-    .replace(/{modo}/g, ev.juego || "casual")
-    .replace(/{muertes}/g, d)
-    .replace(/{k}/g, k)
-    .replace(/{d}/g, d)
-    .replace(/{a}/g, a)
-    .replace(/{minutos}/g, Math.round((ev.dur || 0) / 60));
+  return escribirFrase(elegida, datos);
 }
 
 async function lineaEvento(cfg, ev, total) {
   if (ev.modo === "casual") return lineaCasual(cfg, ev);
+  if (total !== undefined) ev = { ...ev, total };   // para las frases que miran como quedo
   const icono = ev.modo === "liga" ? "⚔️" : "🎯";
   const modo = ev.modo === "liga" ? "lobby" : "ranked";
   const partes = [`${icono} ${ev.nombre} ${ev.gano ? "GANÓ" : "PERDIÓ"} (${modo})`];
