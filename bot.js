@@ -31,6 +31,7 @@ const SESION_DIR = path.join(BASE, "sesion-whatsapp");
 const RECAP_PATH = path.join(BASE, "ultimo-recap.json");
 const PUNTERO_PATH = path.join(BASE, "punteros.json");
 const ANCLA_PATH = path.join(BASE, "ancla.json");
+const DICHO_PATH = path.join(BASE, "dicho.json");
 const PREMIOS_PATH = path.join(BASE, "ultimo-premio.json");
 const ORDEN_PATH = path.join(BASE, "ultima-orden.json");
 const QUIEN_PATH = path.join(BASE, "quien-es-quien.json");
@@ -834,6 +835,28 @@ async function textoDuplas(cfg) {
   return partes.join("\n");
 }
 
+/** El muro de la verguenza: la peor racha de derrotas viva de la liga. */
+async function textoMuro(cfg) {
+  const estado = await traerEstado(cfg);
+  const enVerguenza = [];
+  for (const j of estado.jugadores || []) {
+    for (const [modo, racha] of [["LIGA", j.racha_liga], ["SOLO", j.racha_solo]]) {
+      if (Array.isArray(racha) && racha[0] === "l" && racha[1] >= 3) {
+        enVerguenza.push({ nombre: j.nombre, modo, n: racha[1] });
+      }
+    }
+  }
+  if (!enVerguenza.length) {
+    return "\u{1F480} *MURO DE LA VERGUENZA*\nNadie en verguenza... por ahora.";
+  }
+  enVerguenza.sort((a, b) => b.n - a.n);
+  const partes = ["\u{1F480} *MURO DE LA VERGUENZA*", ""];
+  enVerguenza.forEach((x) =>
+    partes.push(`\u{1F480} ${x.nombre}: ${x.n} derrotas seguidas en ${x.modo}`));
+  partes.push("", "Se sale ganando una. Suerte con eso.");
+  return partes.join("\n");
+}
+
 /** El que mas se hunde en el mes: el ancla. */
 async function textoAncla(cfg) {
   const estado = await traerEstado(cfg);
@@ -1058,6 +1081,42 @@ async function revisarPremios(cfg, grupoId) {
  * Sirve para no depender de que alguien este delante de esa PC: se sube el
  * cambio, se marca la orden, y el bot la toma en la vuelta siguiente.
  */
+const DICHOS = {
+  muro: textoMuro,
+  ancla: textoAncla,
+  tabla: textoTabla,
+  duplas: textoDuplas,
+  jugando: textoJugando,
+};
+
+/** Si la web pidio que el bot diga algo (orden.json > decir), lo dice una vez. */
+async function revisarDicho(cfg, orden, grupoId, callado) {
+  const pedido = orden && orden.decir;
+  if (!pedido || !pedido.marca || !DICHOS[pedido.que]) return false;
+
+  let ultima = null;
+  try {
+    ultima = JSON.parse(fs.readFileSync(DICHO_PATH, "utf8")).marca;
+  } catch (e) {
+    ultima = null;
+  }
+  try {
+    fs.writeFileSync(DICHO_PATH, JSON.stringify({ marca: pedido.marca }), "utf8");
+  } catch (e) {
+    log(`no pude anotar el pedido (${e.message})`);
+  }
+  if (ultima === pedido.marca) return false;
+  if (callado || ultima === null) return false;  // al arrancar solo se anota
+
+  const texto = await DICHOS[pedido.que](cfg);
+  log(`la web pidio decir "${pedido.que}"`);
+  if (grupoId) {
+    const activo = await asegurarConexion(cfg);
+    await activo.sendMessage(grupoId, { text: texto });
+  }
+  return true;
+}
+
 async function revisarOrden(cfg, grupoId, callado) {
   let orden;
   try {
@@ -1065,6 +1124,8 @@ async function revisarOrden(cfg, grupoId, callado) {
   } catch (e) {
     return false; // no hay ordenes publicadas
   }
+  await revisarDicho(cfg, orden, grupoId, callado);
+
   const marca = orden && orden.actualizar;
   if (!marca) return false;
 
@@ -1141,6 +1202,9 @@ function escucharPreguntas(sock, cfg, grupoId) {
         } else if (texto.startsWith("!duplas") || texto.startsWith("!duplas")) {
           log("comando: !duplas");
           await sock.sendMessage(grupoId, { text: await textoDuplas(cfg) });
+        } else if (texto.startsWith("!muro") || texto.startsWith("!verguenza")) {
+          log("comando: !muro");
+          await sock.sendMessage(grupoId, { text: await textoMuro(cfg) });
         } else if (texto.startsWith("!ancla")) {
           log("comando: !ancla");
           await sock.sendMessage(grupoId, { text: await textoAncla(cfg) });
@@ -1345,6 +1409,7 @@ const AYUDA =
   "*!premios* - los premios del ultimo mes\n" +
   "*!duplas* - las mejores y peores parejas\n" +
   "*!ancla* - el que mas se hunde este mes\n" +
+  "*!muro* - quien esta en el muro de la verguenza\n" +
   "*!amigos* - quien agrego al bot de Steam\n" +
   "*!ayuda* - esta lista";
 
