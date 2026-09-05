@@ -835,6 +835,35 @@ async function textoDuplas(cfg) {
   return partes.join("\n");
 }
 
+/** El ranking de cagones: los que juegan turbos y normales en vez de ranked. */
+async function textoCagones(cfg, soloElPrimero = false) {
+  const estado = await traerEstado(cfg);
+  const lista = estado.cagones || [];
+  if (!lista.length) {
+    return "\u{1F414} *RANKING DE CAGONES*\nNadie se escapo a la ranked este mes. Todos machos.";
+  }
+  const detalle = (c) => {
+    const partes = [];
+    if (c.turbos) partes.push(`${c.turbos} turbo${c.turbos !== 1 ? "s" : ""}`);
+    if (c.normales) partes.push(`${c.normales} normal${c.normales !== 1 ? "es" : ""}`);
+    return partes.join(" y ");
+  };
+
+  if (soloElPrimero) {
+    const c = lista[0];
+    return `\u{1F414} *EL CAGON DEL MES*: ${c.nombre}\n` +
+           `${c.total} partidas escapandole a la ranked (${detalle(c)})\n` +
+           "Ninguna de esas da puntos, campeon.";
+  }
+  const partes = ["\u{1F414} *RANKING DE CAGONES*", ""];
+  lista.forEach((c, i) => {
+    const marca = ["\u{1F414}", "\u{1F425}", "\u{1F423}"][i] || "\u2022";
+    partes.push(`${marca} ${c.nombre}: ${c.total} (${detalle(c)})`);
+  });
+  partes.push("", "Partidas que no dan puntos: turbos y normales del mes.");
+  return partes.join("\n");
+}
+
 /** El muro de la verguenza: la peor racha de derrotas viva de la liga. */
 async function textoMuro(cfg) {
   const estado = await traerEstado(cfg);
@@ -1083,6 +1112,8 @@ async function revisarPremios(cfg, grupoId) {
  */
 const DICHOS = {
   muro: textoMuro,
+  cagones: textoCagones,
+  cagon: (cfg) => textoCagones(cfg, true),   // solo el primero
   ancla: textoAncla,
   tabla: textoTabla,
   duplas: textoDuplas,
@@ -1204,6 +1235,9 @@ function escucharPreguntas(sock, cfg, grupoId) {
         } else if (texto.startsWith("!duplas") || texto.startsWith("!duplas")) {
           log("comando: !duplas");
           await sock.sendMessage(grupoId, { text: await textoDuplas(cfg) });
+        } else if (texto.startsWith("!cagones") || texto.startsWith("!cagon")) {
+          log("comando: !cagones");
+          await sock.sendMessage(grupoId, { text: await textoCagones(cfg) });
         } else if (texto.startsWith("!muro") || texto.startsWith("!verguenza")) {
           log("comando: !muro");
           await sock.sendMessage(grupoId, { text: await textoMuro(cfg) });
@@ -1412,6 +1446,7 @@ const AYUDA =
   "*!duplas* - las mejores y peores parejas\n" +
   "*!ancla* - el que mas se hunde este mes\n" +
   "*!muro* - quien esta en el muro de la verguenza\n" +
+  "*!cagones* - los que le escapan a la ranked\n" +
   "*!amigos* - quien agrego al bot de Steam\n" +
   "*!ayuda* - esta lista";
 
