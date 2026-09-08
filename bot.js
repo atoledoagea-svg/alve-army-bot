@@ -835,6 +835,24 @@ async function textoDuplas(cfg) {
   return partes.join("\n");
 }
 
+/** Los ascensos y descensos de medalla; con `desde` solo los mas nuevos. */
+function lineasMedallas(estado, desde = 0, hasta = Infinity) {
+  return (estado.medallas || [])
+    .filter((m) => (m.ts || 0) >= desde && (m.ts || 0) < hasta)
+    .map((m) => `${m.subio ? "\u2B06\uFE0F" : "\u2B07\uFE0F"} ${m.nombre}: ${m.antes} \u2192 ${m.ahora}`);
+}
+
+/** Quien subio y quien bajo de medalla este mes. */
+async function textoMedallas(cfg) {
+  const estado = await traerEstado(cfg);
+  const lineas = lineasMedallas(estado);
+  if (!lineas.length) {
+    return "\u{1F3C5} *MEDALLAS*\nNadie cambio de rango este mes.";
+  }
+  return ["\u{1F3C5} *CAMBIOS DE MEDALLA DEL MES*", "", ...lineas,
+          "", "El rango sale del perfil de Dota y se revisa cada 6 horas."].join("\n");
+}
+
 /** El ranking de cagones: los que juegan turbos y normales en vez de ranked. */
 async function textoCagones(cfg, soloElPrimero = false) {
   const estado = await traerEstado(cfg);
@@ -1112,6 +1130,7 @@ async function revisarPremios(cfg, grupoId) {
  */
 const DICHOS = {
   muro: textoMuro,
+  medallas: textoMedallas,
   cagones: textoCagones,
   cagon: (cfg) => textoCagones(cfg, true),   // solo el primero
   ancla: textoAncla,
@@ -1235,6 +1254,9 @@ function escucharPreguntas(sock, cfg, grupoId) {
         } else if (texto.startsWith("!duplas") || texto.startsWith("!duplas")) {
           log("comando: !duplas");
           await sock.sendMessage(grupoId, { text: await textoDuplas(cfg) });
+        } else if (texto.startsWith("!medallas") || texto.startsWith("!rangos")) {
+          log("comando: !medallas");
+          await sock.sendMessage(grupoId, { text: await textoMedallas(cfg) });
         } else if (texto.startsWith("!cagones") || texto.startsWith("!cagon")) {
           log("comando: !cagones");
           await sock.sendMessage(grupoId, { text: await textoCagones(cfg) });
@@ -1447,6 +1469,7 @@ const AYUDA =
   "*!ancla* - el que mas se hunde este mes\n" +
   "*!muro* - quien esta en el muro de la verguenza\n" +
   "*!cagones* - los que le escapan a la ranked\n" +
+  "*!medallas* - quien subio y quien bajo de rango\n" +
   "*!amigos* - quien agrego al bot de Steam\n" +
   "*!ayuda* - esta lista";
 
@@ -1626,11 +1649,14 @@ async function resultadosDelDia(cfg, estado, fecha) {
 }
 
 /** Arma el texto del resumen del dia. */
-function textoRecap(fecha, eventos) {
+function textoRecap(fecha, eventos, medallas = []) {
   const [a, m, d] = [fecha.slice(0, 4), fecha.slice(5, 7), fecha.slice(8, 10)];
   const cabecera = `\u{1F4CA} RESUMEN DEL ${d}/${m}`;
+  const cola = medallas.length
+    ? ["", "\u{1F3C5} *Cambios de medalla*", ...medallas].join("\n")
+    : "";
   if (!eventos.length) {
-    return `${cabecera}\n\nNadie jugo nada. Dia tranquilo en la liga.`;
+    return `${cabecera}\n\nNadie jugo nada. Dia tranquilo en la liga.` + cola;
   }
 
   const ganadas = eventos.filter((e) => e.gano).length;
@@ -1674,7 +1700,7 @@ function textoRecap(fecha, eventos) {
     lineas.push("");
     lineas.push(`El dia fue de ${mejor[0]}. El que se quiere olvidar del dia: ${peor[0]}.`);
   }
-  return lineas.join("\n");
+  return lineas.join("\n") + cola;
 }
 
 async function enviarRecap(cfg, grupoId, fecha, prefijo = "") {
@@ -1687,7 +1713,10 @@ async function enviarRecap(cfg, grupoId, fecha, prefijo = "") {
   }
   log(`armando el resumen del ${fecha}...`);
   const eventos = await resultadosDelDia(cfg, estado, fecha);
-  const texto = prefijo + textoRecap(fecha, eventos) + "\n\n" + textoPuntero(estado);
+  // los cambios de medalla de ese dia (desde las 00:00 hasta las 24:00)
+  const arranque = Math.floor(new Date(`${fecha}T00:00:00-03:00`).getTime() / 1000);
+  const medallas = lineasMedallas(estado, arranque, arranque + 86400);
+  const texto = prefijo + textoRecap(fecha, eventos, medallas) + "\n\n" + textoPuntero(estado);
   log(texto.replace(/\n/g, " | "));
   if (grupoId) {
     const activo = await asegurarConexion(cfg);
