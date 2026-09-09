@@ -164,7 +164,47 @@ class LobbyDota {
     });
     this.lobbyActual = { nombre, clave, creada: Date.now() };
     this.log(`dota: lobby "${nombre}" creada (clave ${clave})`);
+    await this.aUnCostado();
     return this.lobbyActual;
+  }
+
+  /** Saca al bot del slot de jugador: son diez lugares y el no juega.
+   *
+   * Primero prueba el canal de transmision; si Valve no lo deja, se queda
+   * sin equipo. Devuelve donde quedo, o null si no pudo moverse.
+   */
+  async aUnCostado() {
+    const D = cargarDota2();
+
+    const transmision = await new Promise((listo) => {
+      const corte = setTimeout(() => listo(false), 8000);
+      this.dota.joinPracticeLobbyBroadcastChannel(1, (err, r) => {
+        clearTimeout(corte);
+        const bien = !err && (!r || r.result === D.schema.DOTAJoinLobbyResult.DOTA_JOIN_RESULT_SUCCESS);
+        listo(bien);
+      });
+    });
+    if (transmision) {
+      this.log("dota: el bot se paso al canal de transmision");
+      return "transmision";
+    }
+
+    const sinEquipo = await new Promise((listo) => {
+      const corte = setTimeout(() => listo(false), 8000);
+      this.dota.joinPracticeLobbyTeam(1, D.schema.DOTA_GC_TEAM.DOTA_GC_TEAM_PLAYER_POOL, (err, r) => {
+        clearTimeout(corte);
+        // aca el codigo bueno es 1, y segun la version viene como eresult
+        const codigo = r ? (r.eresult !== undefined ? r.eresult : r.result) : undefined;
+        listo(codigo === undefined || codigo === 1);
+      });
+    });
+    if (sinEquipo) {
+      this.log("dota: el bot quedo sin equipo");
+      return "sin equipo";
+    }
+
+    this.log("dota: no pude sacar al bot del slot de jugador");
+    return null;
   }
 
   /** Invita a la lobby a esas cuentas de Steam (las que tengan al bot de amigo).
@@ -210,10 +250,21 @@ class LobbyDota {
     if (!lobby) return { radiant: [], dire: [], sinEquipo: [] };
     const equipos = { radiant: [], dire: [], sinEquipo: [] };
     for (const m of lobby.all_members || lobby.members || []) {
+      const accountId = idDeCuenta(m.id || m.steam_id);
+      if (accountId === this.miCuenta()) continue;   // el bot no es uno mas
       const destino = m.team === 0 ? "radiant" : m.team === 1 ? "dire" : "sinEquipo";
-      equipos[destino].push({ accountId: idDeCuenta(m.id || m.steam_id), nombre: m.name });
+      equipos[destino].push({ accountId, nombre: m.name });
     }
     return equipos;
+  }
+
+  /** El numero de cuenta de la cuenta bot, para no contarse a si misma. */
+  miCuenta() {
+    try {
+      return idDeCuenta(String(this.cliente.steamID));
+    } catch (e) {
+      return null;
+    }
   }
 
   /** Cuando la partida termina, avisa el resultado (una sola vez). */
@@ -227,8 +278,10 @@ class LobbyDota {
     const ganoRadiant = lobby.match_outcome === 2;
     const equipos = { radiant: [], dire: [] };
     for (const m of lobby.all_members || lobby.members || []) {
-      if (m.team === 0) equipos.radiant.push(idDeCuenta(m.id || m.steam_id));
-      if (m.team === 1) equipos.dire.push(idDeCuenta(m.id || m.steam_id));
+      const accountId = idDeCuenta(m.id || m.steam_id);
+      if (accountId === this.miCuenta()) continue;
+      if (m.team === 0) equipos.radiant.push(accountId);
+      if (m.team === 1) equipos.dire.push(accountId);
     }
     const resultado = {
       matchId: String(lobby.match_id || ""),
