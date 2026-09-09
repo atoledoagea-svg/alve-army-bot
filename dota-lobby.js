@@ -17,6 +17,50 @@ function cargarDota2() {
   return Dota2;
 }
 
+const { EventEmitter } = require("events");
+
+const APPID_DOTA = 570;
+
+/** Hace de SteamGameCoordinator de node-steam, pero sobre steam-user.
+ *
+ * Son la misma conversacion con Valve escrita distinto: uno manda con send() y
+ * avisa por el evento "message"; el otro con sendToGC() y "receivedFromGC".
+ */
+class PuenteGC extends EventEmitter {
+  constructor(usuario, appid = APPID_DOTA) {
+    super();
+    this.usuario = usuario;
+    this.appid = appid;
+    usuario.on("receivedFromGC", (app, tipo, carga) => {
+      if (app === this.appid) this.emit("message", { msg: tipo }, carga);
+    });
+  }
+
+  send(cabecera, cuerpo, callback) {
+    const carga = Buffer.isBuffer(cuerpo) ? cuerpo : Buffer.from(cuerpo);
+    // la cabecera que arma la libreria trae el steamID como objeto y no se
+    // puede serializar; steam-user ya sabe quien es, asi que va vacia
+    if (callback) {
+      this.usuario.sendToGC(this.appid, cabecera.msg, {}, carga,
+        (app, tipo, respuesta) => callback({ msg: tipo }, respuesta));
+    } else {
+      this.usuario.sendToGC(this.appid, cabecera.msg, {}, carga);
+    }
+  }
+}
+
+/** Hace de SteamUser de node-steam: lo unico que le piden es "estoy jugando". */
+class PuenteUsuario {
+  constructor(usuario) {
+    this.usuario = usuario;
+  }
+
+  gamesPlayed(juegos) {
+    const apps = (juegos || []).map((j) => (j && typeof j === "object" ? j.game_id : j));
+    this.usuario.gamesPlayed(apps);
+  }
+}
+
 const STEAM64_OFFSET = 76561197960265728n;
 const idDeCuenta = (steamid) => Number(BigInt(String(steamid)) - STEAM64_OFFSET);
 
@@ -30,7 +74,21 @@ const CLAVE_SALA = "AlveArmy321";
 class LobbyDota {
   constructor(clienteSteam, log) {
     this.log = log;
+    this.cliente = clienteSteam;
     this.dota = new (cargarDota2().Dota2Client)(clienteSteam, false, false);
+
+    // La libreria ya se armo sus piezas de node-steam, que con steam-user no
+    // sirven: las cambiamos por los puentes y volvemos a colgar el repartidor
+    // de mensajes, que habia quedado atado a la pieza vieja.
+    this.dota._gc = new PuenteGC(clienteSteam);
+    this.dota._user = new PuenteUsuario(clienteSteam);
+    this.dota._protoBufHeader = { msg: "", proto: {} };
+    this.dota._gc.on("message", (cabecera, cuerpo, callback) => {
+      const manejador = this.dota._handlers[cabecera.msg];
+      if (!manejador) return;
+      if (callback) manejador.call(this.dota, cuerpo, callback);
+      else manejador.call(this.dota, cuerpo);
+    });
     this.listo = false;
     this.lobbyActual = null;   // {nombre, clave, creada}
     this.alTerminar = null;    // callback con el resultado
@@ -61,6 +119,9 @@ class LobbyDota {
     try {
       this.dota.exit();
     } catch {}
+    try {
+      this.cliente.gamesPlayed([]);   // que la cuenta bot deje de figurar jugando
+    } catch {}
     this.listo = false;
   }
 
@@ -85,10 +146,20 @@ class LobbyDota {
       // grupo nunca se entera de nada
       const corte = setTimeout(
         () => reject(new Error("el Dota no contesto en 20 segundos")), 20000);
-      this.dota.createPracticeLobby(config, (err) => {
+      this.dota.createPracticeLobby(config, (err, respuesta) => {
         clearTimeout(corte);
-        if (err) reject(err instanceof Error ? err : new Error(String(err)));
-        else resolve();
+        // segun la version del protobuf el codigo viene como result o eresult
+        const codigo = respuesta
+          ? (respuesta.eresult !== undefined ? respuesta.eresult : respuesta.result)
+          : undefined;
+        if (codigo !== undefined && codigo !== 1) {
+          const detalle = (respuesta && respuesta.debug_message) || `codigo ${codigo}`;
+          reject(new Error(`Valve no dejo crear la sala (${detalle})`));
+        } else if (err && codigo === undefined) {
+          reject(err instanceof Error ? err : new Error(String(err)));
+        } else {
+          resolve();
+        }
       });
     });
     this.lobbyActual = { nombre, clave, creada: Date.now() };
