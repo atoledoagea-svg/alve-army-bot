@@ -1139,10 +1139,16 @@ const DICHOS = {
   jugando: textoJugando,
 };
 
-/** Si la web pidio que el bot diga algo (orden.json > decir), lo dice una vez. */
+// pedidos que no son un texto sino una accion
+const HACERES = {
+  lobby: async (cfg, sock, grupoId) => comandoLobby(cfg, sock, grupoId, "!lobby"),
+};
+
+/** Si la web pidio que el bot diga (o haga) algo, lo cumple una sola vez. */
 async function revisarDicho(cfg, orden, grupoId, callado) {
   const pedido = orden && orden.decir;
-  if (!pedido || !pedido.marca || !DICHOS[pedido.que]) return false;
+  if (!pedido || !pedido.marca) return false;
+  if (!DICHOS[pedido.que] && !HACERES[pedido.que]) return false;
 
   let ultima = null;
   try {
@@ -1159,6 +1165,14 @@ async function revisarDicho(cfg, orden, grupoId, callado) {
   // al arrancar no se revive un pedido viejo, pero uno recien hecho si se dice
   const fresco = Date.now() / 1000 - pedido.marca < 30 * 60;
   if (callado || (ultima === null && !fresco)) return false;
+
+  if (HACERES[pedido.que]) {
+    log(`la web pidio "${pedido.que}"`);
+    if (!grupoId) return false;
+    const activo = await asegurarConexion(cfg);
+    await HACERES[pedido.que](cfg, activo, grupoId);
+    return true;
+  }
 
   const texto = await DICHOS[pedido.que](cfg);
   log(`la web pidio decir "${pedido.que}"`);
