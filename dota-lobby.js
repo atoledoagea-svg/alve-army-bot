@@ -20,16 +20,12 @@ function cargarDota2() {
 const STEAM64_OFFSET = 76561197960265728n;
 const idDeCuenta = (steamid) => Number(BigInt(String(steamid)) - STEAM64_OFFSET);
 
-// Region: 3 = US East (la mas usada desde Argentina despues de SA)
-const REGION_POR_DEFECTO = 3;
+// Region 38 = Argentina (codigo "eze", el server de Ezeiza en regions.txt de Valve)
+const REGION_POR_DEFECTO = 38;
 
-/** Contrasena corta y facil de dictar por WhatsApp. */
-function claveAlAzar() {
-  const letras = "abcdefghijkmnpqrstuvwxyz23456789";
-  let s = "";
-  for (let i = 0; i < 5; i++) s += letras[Math.floor(Math.random() * letras.length)];
-  return s;
-}
+// La sala de la liga es siempre la misma, asi no hay que dictar nada nuevo
+const NOMBRE_SALA = "AlveArmy";
+const CLAVE_SALA = "AlveArmy321";
 
 class LobbyDota {
   constructor(clienteSteam, log) {
@@ -71,8 +67,8 @@ class LobbyDota {
   /** Crea la lobby de la liga. Devuelve {nombre, clave}. */
   async crear(opciones = {}) {
     if (!this.listo) throw new Error("el Dota todavia no esta conectado");
-    const clave = opciones.clave || claveAlAzar();
-    const nombre = opciones.nombre || "Miniliga";
+    const clave = opciones.clave || CLAVE_SALA;
+    const nombre = opciones.nombre || NOMBRE_SALA;
     const config = {
       game_name: nombre,
       pass_key: clave,
@@ -147,4 +143,4 @@ class LobbyDota {
   }
 }
 
-module.exports = { LobbyDota, claveAlAzar };
+module.exports = { LobbyDota };

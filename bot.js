@@ -1229,6 +1229,9 @@ function escucharPreguntas(sock, cfg, grupoId) {
         if (texto.startsWith("!lobby")) {
           log(`comando: ${texto}`);
           await comandoLobby(cfg, sock, grupoId, texto);
+        } else if (texto.startsWith("!jugar")) {
+          log("comando: !jugar");
+          await comandoLobby(cfg, sock, grupoId, "!lobby jugar");
         } else if (texto.startsWith("!tabla")) {
           log("comando: !tabla");
           await sock.sendMessage(grupoId, { text: await textoTabla(cfg) });
@@ -1473,7 +1476,8 @@ const AYUDA =
   "*!jugando* - quien tiene el Dota abierto\n" +
   "*!frase Nombre* - una cargada para ese, con audio\n" +
   "*!frase* algo - agregar una cargada\n" +
-  "*!lobby* - crear la lobby de la liga\n" +
+  "*!lobby* - crear la sala de la liga\n" +
+  "*!jugar* - empezar la partida cuando estan todos\n" +
   "*!puntero* - quien va primero en cada tabla\n" +
   "*!premios* - los premios del ultimo mes\n" +
   "*!duplas* - las mejores y peores parejas\n" +
@@ -1576,17 +1580,18 @@ async function comandoLobby(cfg, sock, grupoId, texto) {
 
   if (l.lobbyActual) {
     return responder(
-      `Ya hay una lobby abierta: "${l.lobbyActual.nombre}" (clave: ${l.lobbyActual.clave})\n` +
-      "Escribi !lobby cerrar si queres cerrarla."
+      `SALA CREADA: *${l.lobbyActual.nombre}*\n` +
+      `CONTRASE\u00d1A: *${l.lobbyActual.clave}*\n\n` +
+      "Cuando esten listos *!jugar* aca en el chat para empezar la partida\n" +
+      "(la sala ya estaba abierta; *!lobby cerrar* si la quieren cerrar)."
     );
   }
   try {
     const datos = await l.crear();
     return responder(
-      `\u2694\uFE0F Lobby creada!\n\n` +
-      `Nombre: *${datos.nombre}*\nClave: *${datos.clave}*\n\n` +
-      "En el Dota: Jugar -> Lobbys -> buscar el nombre y entrar con la clave.\n" +
-      "Cuando esten todos, escriban *!lobby jugar*."
+      `SALA CREADA: *${datos.nombre}*\n` +
+      `CONTRASE\u00d1A: *${datos.clave}*\n\n` +
+      "Cuando esten listos *!jugar* aca en el chat para empezar la partida"
     );
   } catch (e) {
     return responder(`No pude crear la lobby: ${e.message}`);
