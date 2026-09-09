@@ -73,16 +73,23 @@ class LobbyDota {
       game_name: nombre,
       pass_key: clave,
       server_region: opciones.region || REGION_POR_DEFECTO,
-      game_mode: Dota2.schema.lookupEnum("DOTA_GameMode").values.DOTA_GAMEMODE_CM,
+      game_mode: Dota2.schema.DOTA_GameMode.DOTA_GAMEMODE_CM,
       series_type: 0,
       allow_cheats: false,
       fill_with_bots: false,
       allow_spectating: true,
       dota_tv_delay: 2,
-      visibility: Dota2.schema.lookupEnum("DOTALobbyVisibility").values.DOTALobbyVisibility_Public,
     };
     await new Promise((resolve, reject) => {
-      this.dota.createPracticeLobby(config, (err) => (err ? reject(err) : resolve()));
+      // si Valve no contesta, cortamos: si no, el comando queda colgado y el
+      // grupo nunca se entera de nada
+      const corte = setTimeout(
+        () => reject(new Error("el Dota no contesto en 20 segundos")), 20000);
+      this.dota.createPracticeLobby(config, (err) => {
+        clearTimeout(corte);
+        if (err) reject(err instanceof Error ? err : new Error(String(err)));
+        else resolve();
+      });
     });
     this.lobbyActual = { nombre, clave, creada: Date.now() };
     this.log(`dota: lobby "${nombre}" creada (clave ${clave})`);

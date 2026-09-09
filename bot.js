@@ -1242,10 +1242,10 @@ function escucharPreguntas(sock, cfg, grupoId) {
       try {
         if (texto.startsWith("!lobby")) {
           log(`comando: ${texto}`);
-          await comandoLobby(cfg, sock, grupoId, texto);
+          await conAviso(sock, grupoId, () => comandoLobby(cfg, sock, grupoId, texto));
         } else if (texto.startsWith("!jugar")) {
           log("comando: !jugar");
-          await comandoLobby(cfg, sock, grupoId, "!lobby jugar");
+          await conAviso(sock, grupoId, () => comandoLobby(cfg, sock, grupoId, "!lobby jugar"));
         } else if (texto.startsWith("!tabla")) {
           log("comando: !tabla");
           await sock.sendMessage(grupoId, { text: await textoTabla(cfg) });
@@ -1532,7 +1532,7 @@ async function prepararLobby(cfg, grupoId) {
     try {
       lobby = new LobbyDota(presencia.cliente, log);
     } catch (e) {
-      log(`lobby: no pude usar la libreria de Dota (${e.message}); el resto sigue funcionando`);
+      log(`lobby: no pude usar la libreria de Dota (${e.stack || e.message}); el resto sigue funcionando`);
       return null;
     }
     lobby.alTerminar = async (resultado) => {
@@ -1549,8 +1549,14 @@ async function prepararLobby(cfg, grupoId) {
   }
   if (!lobby.listo) {
     log("dota: encendiendo el Dota en la cuenta bot...");
-    await lobby.arrancar();
+    try {
+      await lobby.arrancar();
+    } catch (e) {
+      log(`dota: no pude encenderlo (${e.stack || e.message})`);
+      return null;
+    }
   }
+  if (!lobby.listo) log("dota: el Game Coordinator no contesto a tiempo");
   return lobby.listo ? lobby : null;
 }
 
@@ -1593,6 +1599,24 @@ function lineaInvitaciones(r) {
     partes.push(`Sin invitacion porque no tienen agregado al bot: ${r.faltan.sort().join(", ")}`);
   }
   return partes.length ? "\n\n" + partes.join("\n") : "";
+}
+
+/** Corre algo de la sala y, si falla, lo dice en el grupo en vez de callarselo.
+ *
+ * Las lobbys pasan por la libreria de Dota, que es la parte mas fragil de todo
+ * esto: si algo revienta ahi, quedaba solo en el log de la PC del bot.
+ */
+async function conAviso(sock, grupoId, tarea) {
+  try {
+    await tarea();
+  } catch (e) {
+    log(`lobby: fallo (${e.stack || e.message})`);
+    try {
+      await sock.sendMessage(grupoId, { text: `No pude con la sala: ${e.message}` });
+    } catch (e2) {
+      log(`lobby: tampoco pude avisarlo (${e2.message})`);
+    }
+  }
 }
 
 /** Responde a los comandos !lobby del grupo. */
