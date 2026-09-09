@@ -1370,6 +1370,17 @@ async function comandoSoy(cfg, jid, texto) {
 
 /** Una cargada para ese jugador: la manda escrita y, si esta grabada, hablada. */
 async function cargadaDe(cfg, sock, grupoId, nombre) {
+  // un audio cargado con esa palabra, aunque no sea el nombre de nadie
+  const suelto = await audioPropio(cfg, nombre);
+  if (suelto) {
+    await sock.sendMessage(grupoId, {
+      audio: { url: suelto.url },
+      mimetype: "audio/ogg; codecs=opus",
+      ptt: true,
+    });
+    return true;
+  }
+
   const estado = await traerEstado(cfg);
   const busco = nombre.toLowerCase();
   const jugadores = estado.jugadores || [];
