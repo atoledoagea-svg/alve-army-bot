@@ -89,6 +89,27 @@ class LobbyDota {
     return this.lobbyActual;
   }
 
+  /** Invita a la lobby a esas cuentas de Steam (las que tengan al bot de amigo).
+   *
+   * Va de a una y con una pausa corta: el Game Coordinator ignora las rafagas.
+   * Devuelve a cuantos alcanzo a invitar.
+   */
+  async invitar(steam64s, pausaMs = 400) {
+    if (!this.lobbyActual) throw new Error("no hay ninguna lobby abierta");
+    let mandadas = 0;
+    for (const id of steam64s) {
+      try {
+        this.dota.inviteToLobby(String(id));
+        mandadas++;
+      } catch (e) {
+        this.log(`dota: no pude invitar a ${id} (${e.message})`);
+      }
+      await new Promise((r) => setTimeout(r, pausaMs));
+    }
+    this.log(`dota: ${mandadas} invitacion(es) a la lobby`);
+    return mandadas;
+  }
+
   /** Arranca la partida (necesita gente en los slots). */
   async lanzar() {
     if (!this.lobbyActual) throw new Error("no hay ninguna lobby abierta");

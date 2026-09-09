@@ -1476,7 +1476,8 @@ const AYUDA =
   "*!jugando* - quien tiene el Dota abierto\n" +
   "*!frase Nombre* - una cargada para ese, con audio\n" +
   "*!frase* algo - agregar una cargada\n" +
-  "*!lobby* - crear la sala de la liga\n" +
+  "*!lobby* - crear la sala de la liga e invitar por Steam\n" +
+  "*!lobby invitar* - volver a mandar las invitaciones\n" +
   "*!jugar* - empezar la partida cuando estan todos\n" +
   "*!puntero* - quien va primero en cada tabla\n" +
   "*!premios* - los premios del ultimo mes\n" +
@@ -1539,6 +1540,47 @@ async function prepararLobby(cfg, grupoId) {
   return lobby.listo ? lobby : null;
 }
 
+const STEAM64_BASE = 76561197960265728n;
+const aSteam64 = (accountId) => String(BigInt(accountId) + STEAM64_BASE);
+
+/** Invita a la sala a los de la liga que tienen agregado al bot en Steam.
+ *
+ * Steam solo deja invitar a los amigos, asi que el resto queda afuera y se
+ * lo nombra para que sepan por que no les llego nada.
+ */
+async function invitarALaSala(cfg, l) {
+  if (!presencia || !presencia.listo) return null;
+  let jugadores = [];
+  try {
+    jugadores = (await traerEstado(cfg)).jugadores || [];
+  } catch (e) {
+    return null;
+  }
+  const amistades = presencia.amistades(jugadores);
+  const amigos = [];
+  const faltan = [];
+  for (const [accountId, info] of amistades) {
+    if (info.estado === "amigo") amigos.push({ accountId, nombre: info.nombre });
+    else faltan.push(info.nombre);
+  }
+  if (!amigos.length) return { invitados: 0, faltan };
+  const invitados = await l.invitar(amigos.map((a) => aSteam64(a.accountId)));
+  return { invitados, faltan, nombres: amigos.map((a) => a.nombre) };
+}
+
+/** La linea que le cuenta al grupo como salieron las invitaciones. */
+function lineaInvitaciones(r) {
+  if (!r) return "";
+  const partes = [];
+  if (r.invitados) {
+    partes.push(`Les mande la invitacion por Steam a ${r.invitados}: ${(r.nombres || []).sort().join(", ")}`);
+  }
+  if (r.faltan && r.faltan.length) {
+    partes.push(`Sin invitacion porque no tienen agregado al bot: ${r.faltan.sort().join(", ")}`);
+  }
+  return partes.length ? "\n\n" + partes.join("\n") : "";
+}
+
 /** Responde a los comandos !lobby del grupo. */
 async function comandoLobby(cfg, sock, grupoId, texto) {
   const responder = (t) => sock.sendMessage(grupoId, { text: t });
@@ -1555,6 +1597,13 @@ async function comandoLobby(cfg, sock, grupoId, texto) {
   if (texto.includes("cerrar")) {
     l.cerrar();
     return responder("\u{1F6AA} Lobby cerrada.");
+  }
+
+  if (texto.includes("invitar")) {
+    if (!l.lobbyActual) return responder("No hay ninguna sala abierta. Escribi !lobby para crearla.");
+    const r = await invitarALaSala(cfg, l);
+    if (!r) return responder("No pude mandar las invitaciones: la cuenta de Steam del bot no esta conectada.");
+    return responder(`Invitaciones mandadas.${lineaInvitaciones(r)}`);
   }
 
   if (texto.includes("estado")) {
@@ -1588,11 +1637,20 @@ async function comandoLobby(cfg, sock, grupoId, texto) {
   }
   try {
     const datos = await l.crear();
-    return responder(
+    await responder(
       `SALA CREADA: *${datos.nombre}*\n` +
       `CONTRASE\u00d1A: *${datos.clave}*\n\n` +
       "Cuando esten listos *!jugar* aca en el chat para empezar la partida"
     );
+    // las invitaciones tardan unos segundos, asi que van en un aviso aparte.
+    // Si algo falla ahi la sala ya esta creada igual, no es para asustar a nadie.
+    try {
+      const linea = lineaInvitaciones(await invitarALaSala(cfg, l));
+      if (linea) await responder(linea.trim());
+    } catch (e) {
+      log(`lobby: no pude mandar las invitaciones (${e.message})`);
+    }
+    return;
   } catch (e) {
     return responder(`No pude crear la lobby: ${e.message}`);
   }
