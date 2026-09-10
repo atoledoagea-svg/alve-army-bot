@@ -132,6 +132,8 @@ message CMsgPracticeLobbySetDetails {
 	optional bool custom_game_penalties = 47;
 	optional string lan_host_ping_location = 48;
 	optional uint32 league_node_id = 49;
+	// Seleccion Inmortal: dos capitanes reparten a los jugadores antes de jugar
+	optional bool do_player_draft = 53;
 }
 
 message CMsgPracticeLobbyCreate {

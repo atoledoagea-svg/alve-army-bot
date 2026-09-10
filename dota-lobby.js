@@ -130,37 +130,51 @@ class LobbyDota {
     if (!this.listo) throw new Error("el Dota todavia no esta conectado");
     const clave = opciones.clave || CLAVE_SALA;
     const nombre = opciones.nombre || NOMBRE_SALA;
-    const config = {
+    // El mensaje lo armamos aca en vez de usar createPracticeLobby: esa funcion
+    // filtra las opciones contra una lista suya que no conoce do_player_draft.
+    const detalles = new Dota2.schema.CMsgPracticeLobbySetDetails({
       game_name: nombre,
       pass_key: clave,
       server_region: opciones.region || REGION_POR_DEFECTO,
       game_mode: Dota2.schema.DOTA_GameMode.DOTA_GAMEMODE_CM,
+      cm_pick: Dota2.schema.DOTA_CM_PICK.DOTA_CM_RANDOM,
       series_type: 0,
       allow_cheats: false,
       fill_with_bots: false,
       allow_spectating: true,
-      dota_tv_delay: 2,
-    };
+      dota_tv_delay: Dota2.schema.LobbyDotaTVDelay.LobbyDotaTV_300,
+      do_player_draft: true,   // Seleccion Inmortal, y despues juegan Modo Capitan
+    });
+    const mensaje = new Dota2.schema.CMsgPracticeLobbyCreate({
+      lobby_details: detalles,
+      pass_key: clave,
+    });
+
     await new Promise((resolve, reject) => {
       // si Valve no contesta, cortamos: si no, el comando queda colgado y el
       // grupo nunca se entera de nada
       const corte = setTimeout(
         () => reject(new Error("el Dota no contesto en 20 segundos")), 20000);
-      this.dota.createPracticeLobby(config, (err, respuesta) => {
-        clearTimeout(corte);
-        // segun la version del protobuf el codigo viene como result o eresult
-        const codigo = respuesta
-          ? (respuesta.eresult !== undefined ? respuesta.eresult : respuesta.result)
-          : undefined;
-        if (codigo !== undefined && codigo !== 1) {
-          const detalle = (respuesta && respuesta.debug_message) || `codigo ${codigo}`;
-          reject(new Error(`Valve no dejo crear la sala (${detalle})`));
-        } else if (err && codigo === undefined) {
-          reject(err instanceof Error ? err : new Error(String(err)));
-        } else {
-          resolve();
+      this.dota.sendToGC(
+        Dota2.schema.EDOTAGCMsg.k_EMsgGCPracticeLobbyCreate,
+        mensaje,
+        function (cuerpo, avisar) {   // la libreria nos pasa la respuesta cruda
+          avisar(Dota2.schema.CMsgGenericResult.decode(cuerpo));
+        },
+        (respuesta) => {
+          clearTimeout(corte);
+          // segun la version del protobuf el codigo viene como result o eresult
+          const codigo = respuesta
+            ? (respuesta.eresult !== undefined ? respuesta.eresult : respuesta.result)
+            : undefined;
+          if (codigo !== undefined && codigo !== 1) {
+            const detalle = (respuesta && respuesta.debug_message) || `codigo ${codigo}`;
+            reject(new Error(`Valve no dejo crear la sala (${detalle})`));
+          } else {
+            resolve();
+          }
         }
-      });
+      );
     });
     this.lobbyActual = { nombre, clave, creada: Date.now() };
     this.log(`dota: lobby "${nombre}" creada (clave ${clave})`);
