@@ -914,7 +914,10 @@ async function textoAncla(cfg) {
   const partes = ["\u2693 *EL ANCLA DEL MES*", ""];
   filas.forEach((f, i) => {
     const marca = i === 0 ? "\u2693" : "\u2022";
-    partes.push(`${marca} ${f.nombre}: ${f.muertes} muertes en ${f.pj} partidas`);
+    // el promedio es lo que de verdad compara: uno puede morir mucho por jugar mucho
+    const promedio = f.pj ? (f.muertes / f.pj).toFixed(1) : "0.0";
+    partes.push(`${marca} ${f.nombre}: ${f.muertes} muertes en ${f.pj} partidas `
+                + `(${promedio} por partida)`);
   });
   partes.push("", "El que mas muere en el mes, contando todas las partidas.");
   return partes.join("\n");
