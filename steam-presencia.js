@@ -168,15 +168,20 @@ class PresenciaSteam {
       const tokens = datos && datos.richPresence;
       if (tokens && Object.keys(tokens).length) salida.set(steamid, tokens);
     }
-    this.avisarUnaVez(`fresco${salida.size}/${steamids.length}`,
+    this.avisarUnaVez("detalle", `${salida.size}/${steamids.length}`,
       `steam: el detalle en vivo lo tengo de ${salida.size} de ${steamids.length} en el Dota`);
     return salida;
   }
 
-  /** Escribe un aviso solo cuando cambia, para no llenar la consola. */
-  avisarUnaVez(clave, texto) {
-    if (this.ultimoAviso === clave) return;
-    this.ultimoAviso = clave;
+  /** Escribe un aviso solo cuando cambia, para no llenar la consola.
+   *
+   * Cada canal lleva su propia memoria: si todos compartieran una, dos avisos
+   * seguidos se pisarian y se escribirian siempre.
+   */
+  avisarUnaVez(canal, clave, texto) {
+    if (!this.ultimoAviso) this.ultimoAviso = new Map();
+    if (this.ultimoAviso.get(canal) === clave) return;
+    this.ultimoAviso.set(canal, clave);
     this.log(texto);
   }
 
@@ -221,14 +226,14 @@ class PresenciaSteam {
       }));
     }
     if (!Object.keys(personas).length) {
-      this.avisarUnaVez("vacio", "steam: no me contesto ningun jugador");
+      this.avisarUnaVez("vacio", "si", "steam: no me contesto ningun jugador");
       return salida;
     }
 
     let sinDetalle = 0;
     const enDota = Object.entries(personas).filter(([, p]) => String(p.gameid || "") === String(APPID_DOTA));
     const resumen = () => this.avisarUnaVez(
-      `ok${enDota.length}-${sinDetalle}`,
+      "resumen", `${enDota.length}-${sinDetalle}`,
       `steam: ${enDota.length} de ${Object.keys(personas).length} estan en el Dota` +
       (sinDetalle ? `, y de ${sinDetalle} no me llego el detalle` : ""));
     if (enDota.length && !this.mostreCrudo) {
