@@ -861,10 +861,15 @@ async function textoPrivados(cfg) {
   if (!lista.length) {
     return "\u{1F513} Todos tienen las partidas publicas. Nadie se esconde.";
   }
+  // los que ya tenian partidas contadas las apagaron a proposito
+  const escondidos = new Set(estado.escondidos || []);
+  const lineas = lista.map((n) => escondidos.has(n)
+    ? `\u{1F414} *${n}* desactivo sus partidas para que el bot no las lea. Cagon.`
+    : `\u2022 ${n}: nunca las activo`);
   return [
     "\u{1F512} *PARTIDAS EN PRIVADO*",
     "",
-    ...lista.map((n) => `\u2022 ${n}`),
+    ...lineas,
     "",
     "Con las partidas en privado la liga no les puede contar nada: lo que juegan no suma.",
     "Para arreglarlo: Dota 2 > Configuracion > Opciones > Social > Exponer datos publicos de partidas.",
