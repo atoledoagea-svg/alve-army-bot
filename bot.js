@@ -854,6 +854,23 @@ async function textoMedallas(cfg) {
 }
 
 /** El ranking de cagones: los que juegan turbos y normales en vez de ranked. */
+/** Quienes tienen las partidas en privado: la liga no les puede contar nada. */
+async function textoPrivados(cfg) {
+  const estado = await traerEstado(cfg);
+  const lista = estado.privados || [];
+  if (!lista.length) {
+    return "\u{1F513} Todos tienen las partidas publicas. Nadie se esconde.";
+  }
+  return [
+    "\u{1F512} *PARTIDAS EN PRIVADO*",
+    "",
+    ...lista.map((n) => `\u2022 ${n}`),
+    "",
+    "Con las partidas en privado la liga no les puede contar nada: lo que juegan no suma.",
+    "Para arreglarlo: Dota 2 > Configuracion > Opciones > Social > Exponer datos publicos de partidas.",
+  ].join("\n");
+}
+
 async function textoCagones(cfg, soloElPrimero = false) {
   const estado = await traerEstado(cfg);
   const lista = estado.cagones || [];
@@ -1136,6 +1153,7 @@ const DICHOS = {
   medallas: textoMedallas,
   cagones: textoCagones,
   cagon: (cfg) => textoCagones(cfg, true),   // solo el primero
+  privados: textoPrivados,
   ancla: textoAncla,
   tabla: textoTabla,
   duplas: textoDuplas,
@@ -1277,6 +1295,9 @@ function escucharPreguntas(sock, cfg, grupoId) {
         } else if (texto.startsWith("!medallas") || texto.startsWith("!rangos")) {
           log("comando: !medallas");
           await sock.sendMessage(grupoId, { text: await textoMedallas(cfg) });
+        } else if (texto.startsWith("!privados") || texto.startsWith("!privado")) {
+          log("comando: !privados");
+          await sock.sendMessage(grupoId, { text: await textoPrivados(cfg) });
         } else if (texto.startsWith("!cagones") || texto.startsWith("!cagon")) {
           log("comando: !cagones");
           await sock.sendMessage(grupoId, { text: await textoCagones(cfg) });
@@ -1502,6 +1523,7 @@ const AYUDA =
   "*!ancla* - el que mas se hunde este mes\n" +
   "*!muro* - quien esta en el muro de la verguenza\n" +
   "*!cagones* - los que le escapan a la ranked\n" +
+  "*!privados* - quien tiene las partidas en privado\n" +
   "*!medallas* - quien subio y quien bajo de rango\n" +
   "*!amigos* - quien agrego al bot de Steam\n" +
   "*!ayuda* - esta lista";
