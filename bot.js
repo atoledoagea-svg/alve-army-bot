@@ -34,6 +34,7 @@ const ANCLA_PATH = path.join(BASE, "ancla.json");
 const DICHO_PATH = path.join(BASE, "dicho.json");
 const PREMIOS_PATH = path.join(BASE, "ultimo-premio.json");
 const ORDEN_PATH = path.join(BASE, "ultima-orden.json");
+const VISTAS_PATH = path.join(BASE, "vistas-en-vivo.json");
 const QUIEN_PATH = path.join(BASE, "quien-es-quien.json");
 
 const LOBBY_PRIVADA = 1;
@@ -672,11 +673,62 @@ async function publicarPresencia(cfg, actual, steamConectado) {
   else log(`web: no acepto la presencia (${resultado})`);
 }
 
+const leerVistas = () => {
+  try {
+    return new Set(JSON.parse(fs.readFileSync(VISTAS_PATH, "utf8")));
+  } catch (e) {
+    return new Set();
+  }
+};
+
+/** Anota una partida en curso de alguien que no expone sus datos.
+ *
+ * La liga no puede pedirle su historial a Steam, pero si el detalle de la
+ * partida por numero. Lo unico que falta es saber cual jugo y de que lado,
+ * y eso el Dota lo dice mientras se esta jugando.
+ */
+async function anotarVista(cfg, matchId, accountId, heroId, radiant) {
+  if (!cfg.admin_key || !matchId || !accountId) return;
+  const clave = `${matchId}-${accountId}`;
+  const vistas = leerVistas();
+  if (vistas.has(clave)) return;   // ya la mandamos
+  try {
+    const r = await fetch(`${cfg.web_publica}/api/vistas`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        clave: cfg.admin_key,
+        match_id: Number(matchId),
+        account_id: accountId,
+        hero_id: heroId || null,
+        radiant: Boolean(radiant),
+      }),
+    });
+    const d = await r.json();
+    if (!d.ok) return log(`vista: la web no la acepto (${d.error})`);
+  } catch (e) {
+    return log(`vista: no pude anotarla (${e.message})`);
+  }
+  vistas.add(clave);
+  try {
+    fs.writeFileSync(VISTAS_PATH, JSON.stringify([...vistas].slice(-500)), "utf8");
+  } catch (e) {
+    log(`vista: no pude recordarla (${e.message})`);
+  }
+  log(`vista: anote la partida ${matchId} de ${accountId} (en privado)`);
+}
+
 /** Le agrega a cada uno como va su partida (marcador y minuto). */
 async function sumarMarcadores(actual, cfg) {
   if (!marcador || !marcador.listo) return;
   const enPartida = [...actual.values()].filter((i) => i.situacion === "partida" && i.partida);
   if (!enPartida.length) return;
+  let privados = new Set();
+  try {
+    privados = new Set((await traerEstado(cfg)).privados || []);
+  } catch (e) {
+    privados = new Set();
+  }
   let juegos;
   try {
     juegos = await marcador.consultar(enPartida.map((i) => i.partida));
@@ -703,6 +755,10 @@ async function sumarMarcadores(actual, cfg) {
     info.marcador = { aFavor, enContra, minuto: juego.minuto };
     const mio = kdas.get(aid);
     if (mio) info.kda = mio;
+    // si no expone sus datos, esta es la unica forma de que la liga se entere
+    if (yo && juego.match_id && privados.has(info.nombre)) {
+      await anotarVista(cfg, juego.match_id, aid, yo.hero_id, yo.radiant);
+    }
   }
 }
 

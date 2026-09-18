@@ -74,6 +74,9 @@ class Marcador {
             radiant: i < 5,
           }));
           salida.set(lobby, {
+            // el numero de la partida: con esto se puede leer el resultado
+            // cuando termine, aunque el jugador no exponga sus datos
+            match_id: juego.match_id ? String(juego.match_id) : null,
             radiant: juego.radiant_score || 0,
             dire: juego.dire_score || 0,
             minuto: Math.max(0, Math.round((juego.game_time || 0) / 60)),
