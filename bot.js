@@ -647,18 +647,23 @@ async function publicarPresencia(cfg, actual, steamConectado) {
   const reciente = ahora - ultimoEnvio < LATIDO_MS;
   // se escribe si cambio algo, y si no, cada tanto igual: ese latido es lo
   // unico que permite saber desde la web si el bot sigue vivo
-  if (igual && reciente) return;
+  if (igual && reciente && !vistasPendientes.size) return;
   ultimaHuella = huella;
   ultimoEnvio = ahora;
 
   let resultado;
+  // las partidas vistas en vivo van pegadas aca: no hay lugar para otra funcion
+  // en Vercel, y esta llamada ya se hace cada vuelta
+  const vistas = [...vistasPendientes.entries()];
   try {
     const r = await fetch(`${cfg.web_publica}/api/presencia`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ clave: cfg.admin_key, steam: Boolean(steamConectado),
-                             whatsapp: waConectado, version: versionBot, jugadores }),
+                             whatsapp: waConectado, version: versionBot, jugadores,
+                             vistas: vistas.map(([, v]) => v) }),
     });
+    if (r.ok && vistas.length) vistasEntregadas(vistas.map(([c]) => c));
     if (r.ok) resultado = "ok";
     else if (r.status === 403) resultado = "clave-mal";
     else resultado = `error-${r.status}`;
@@ -687,35 +692,33 @@ const leerVistas = () => {
  * partida por numero. Lo unico que falta es saber cual jugo y de que lado,
  * y eso el Dota lo dice mientras se esta jugando.
  */
-async function anotarVista(cfg, matchId, accountId, heroId, radiant) {
+const vistasPendientes = new Map();   // clave -> dato, hasta que la web las reciba
+
+function anotarVista(cfg, matchId, accountId, heroId, radiant) {
   if (!cfg.admin_key || !matchId || !accountId) return;
   const clave = `${matchId}-${accountId}`;
+  if (leerVistas().has(clave) || vistasPendientes.has(clave)) return;  // ya esta
+  vistasPendientes.set(clave, {
+    match_id: Number(matchId),
+    account_id: accountId,
+    hero_id: heroId || null,
+    radiant: Boolean(radiant),
+  });
+  log(`vista: anote la partida ${matchId} de ${accountId} (en privado)`);
+}
+
+/** Las da por entregadas: no se vuelven a mandar aunque el bot reinicie. */
+function vistasEntregadas(claves) {
   const vistas = leerVistas();
-  if (vistas.has(clave)) return;   // ya la mandamos
-  try {
-    const r = await fetch(`${cfg.web_publica}/api/vistas`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        clave: cfg.admin_key,
-        match_id: Number(matchId),
-        account_id: accountId,
-        hero_id: heroId || null,
-        radiant: Boolean(radiant),
-      }),
-    });
-    const d = await r.json();
-    if (!d.ok) return log(`vista: la web no la acepto (${d.error})`);
-  } catch (e) {
-    return log(`vista: no pude anotarla (${e.message})`);
+  for (const c of claves) {
+    vistas.add(c);
+    vistasPendientes.delete(c);
   }
-  vistas.add(clave);
   try {
     fs.writeFileSync(VISTAS_PATH, JSON.stringify([...vistas].slice(-500)), "utf8");
   } catch (e) {
-    log(`vista: no pude recordarla (${e.message})`);
+    log(`vista: no pude recordarlas (${e.message})`);
   }
-  log(`vista: anote la partida ${matchId} de ${accountId} (en privado)`);
 }
 
 /** Le agrega a cada uno como va su partida (marcador y minuto). */
@@ -757,7 +760,7 @@ async function sumarMarcadores(actual, cfg) {
     if (mio) info.kda = mio;
     // si no expone sus datos, esta es la unica forma de que la liga se entere
     if (yo && juego.match_id && privados.has(info.nombre)) {
-      await anotarVista(cfg, juego.match_id, aid, yo.hero_id, yo.radiant);
+      anotarVista(cfg, juego.match_id, aid, yo.hero_id, yo.radiant);
     }
   }
 }
