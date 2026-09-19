@@ -35,6 +35,7 @@ const DICHO_PATH = path.join(BASE, "dicho.json");
 const PREMIOS_PATH = path.join(BASE, "ultimo-premio.json");
 const ORDEN_PATH = path.join(BASE, "ultima-orden.json");
 const VISTAS_PATH = path.join(BASE, "vistas-en-vivo.json");
+const POR_AVISAR_PATH = path.join(BASE, "vistas-por-avisar.json");
 const QUIEN_PATH = path.join(BASE, "quien-es-quien.json");
 
 const LOBBY_PRIVADA = 1;
@@ -126,6 +127,16 @@ async function historial(cfg, accountId, cantidad = 5) {
     seq: m.match_seq_num,
     inicio: m.start_time,
   }));
+}
+
+/** El detalle de una partida por su numero, sin pasar por el historial.
+ *
+ * Es la unica via para los que no exponen sus datos: su historial viene vacio,
+ * pero la partida en si es publica para cualquiera que sepa el numero.
+ */
+async function detallePorNumero(cfg, matchId) {
+  const r = await steam(cfg, "GetMatchDetails", { match_id: matchId });
+  return r && r.match_id ? r : null;
 }
 
 /** GetMatchDetails devuelve 500 hace rato; este endpoint trae lo mismo. */
@@ -692,6 +703,93 @@ const leerVistas = () => {
  * partida por numero. Lo unico que falta es saber cual jugo y de que lado,
  * y eso el Dota lo dice mientras se esta jugando.
  */
+const leerPorAvisar = () => {
+  try {
+    return JSON.parse(fs.readFileSync(POR_AVISAR_PATH, "utf8"));
+  } catch (e) {
+    return [];
+  }
+};
+
+const guardarPorAvisar = (cola) => {
+  try {
+    fs.writeFileSync(POR_AVISAR_PATH, JSON.stringify(cola.slice(-100)), "utf8");
+  } catch (e) {
+    log(`vista: no pude guardar la cola de avisos (${e.message})`);
+  }
+};
+
+/** El lugar que ocupo en la partida, aunque figure anonimo. */
+function slotDe(detalle, accountId, heroId, radiant) {
+  const jugadores = detalle.players || [];
+  const suyo = jugadores.find((p) => p.account_id === accountId);
+  if (suyo) return suyo;
+  if (!heroId) return null;
+  return jugadores.find((p) =>
+    (!p.account_id || p.account_id === CUENTA_ANONIMA)
+    && p.hero_id === heroId
+    && ((p.player_slot || 0) < 128) === Boolean(radiant)) || null;
+}
+
+const CUENTA_ANONIMA = 4294967295;   // asi figura el que oculta sus datos
+const VIDA_POR_AVISAR = 8 * 3600;    // si en 8 horas no se pudo, se descarta
+
+/** Canta las partidas que vimos en vivo de los que no exponen sus datos.
+ *
+ * Al hueco anonimo se le pone su cuenta y de ahi en mas el aviso se arma
+ * igual que el de cualquiera: mismo texto, mismos puntos, misma cargada.
+ */
+async function avisarVistasPendientes(cfg, estado, grupoId, ajustes, vistas, callado) {
+  let cola = leerPorAvisar();
+  if (!cola.length) return 0;
+  const ahora = Math.floor(Date.now() / 1000);
+  const quedan = [];
+  let avisos = 0;
+
+  for (const v of cola) {
+    if (vistas.has(v.matchId)) continue;          // ya se canto por la via normal
+    if (ahora - (v.ts || 0) > VIDA_POR_AVISAR) {
+      log(`vista: descarto la partida ${v.matchId}, muy vieja`);
+      continue;
+    }
+    let detalle;
+    try {
+      detalle = await detallePorNumero(cfg, v.matchId);
+    } catch (e) {
+      quedan.push(v);                              // sigue en curso o Steam fallo
+      continue;
+    }
+    if (!detalle) {
+      quedan.push(v);
+      continue;
+    }
+    const suyo = slotDe(detalle, v.accountId, v.heroId, v.radiant);
+    if (!suyo) {
+      log(`vista: no pude ubicar a ${v.accountId} en la partida ${v.matchId}`);
+      continue;
+    }
+    suyo.account_id = v.accountId;                 // asi el resto lo trata como a cualquiera
+    vistas.add(v.matchId);
+    if (callado) continue;                         // al arrancar solo se anota
+
+    for (const { ev, total } of eventosDePartida(cfg, estado, detalle, v.matchId, ajustes)) {
+      if (ev.nombre !== (estado.jugadores.find((j) => j.account_id === v.accountId) || {}).nombre) {
+        continue;                                  // los demas ya se avisaron solos
+      }
+      const texto = await lineaEvento(cfg, ev, total);
+      log(texto);
+      if (grupoId) {
+        const activo = await asegurarConexion(cfg);
+        await activo.sendMessage(grupoId, { text: texto });
+      }
+      avisos++;
+    }
+    await dormir(1000);
+  }
+  guardarPorAvisar(quedan);
+  return avisos;
+}
+
 const vistasPendientes = new Map();   // clave -> dato, hasta que la web las reciba
 
 function anotarVista(cfg, matchId, accountId, heroId, radiant) {
@@ -704,6 +802,18 @@ function anotarVista(cfg, matchId, accountId, heroId, radiant) {
     hero_id: heroId || null,
     radiant: Boolean(radiant),
   });
+  // y aparte, para cantarla en el grupo cuando termine
+  const cola = leerPorAvisar();
+  if (!cola.some((v) => v.matchId === Number(matchId) && v.accountId === accountId)) {
+    cola.push({
+      matchId: Number(matchId),
+      accountId,
+      heroId: heroId || null,
+      radiant: Boolean(radiant),
+      ts: Math.floor(Date.now() / 1000),
+    });
+    guardarPorAvisar(cola);
+  }
   log(`vista: anote la partida ${matchId} de ${accountId} (en privado)`);
 }
 
@@ -1989,6 +2099,7 @@ async function pasada(cfg, grupoId, vistas, ajustes, primera) {
   }
 
   if (primera) {
+    await avisarVistasPendientes(cfg, estado, grupoId, ajustes, vistas, true);
     guardarVistas(vistas);
     await revisarPuntero(cfg, estado, grupoId, true); // solo anotar, sin cantar
     await revisarAncla(cfg, estado, grupoId, true);   // idem con el ancla
@@ -2026,6 +2137,7 @@ async function pasada(cfg, grupoId, vistas, ajustes, primera) {
     }
     await dormir(1000);
   }
+  avisos += await avisarVistasPendientes(cfg, estado, grupoId, ajustes, vistas, false);
   guardarVistas(vistas);
   avisos += await revisarPuntero(cfg, estado, grupoId, false);
   avisos += await revisarAncla(cfg, estado, grupoId, false);

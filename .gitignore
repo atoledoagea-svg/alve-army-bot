@@ -6,6 +6,7 @@ sesion-steam.json
 # estado local del bot
 partidas-vistas.json
 vistas-en-vivo.json
+vistas-por-avisar.json
 ultimo-recap.json
 punteros.json
 ultimo-premio.json
