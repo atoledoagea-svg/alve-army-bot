@@ -14,6 +14,7 @@ ultimo-premio.json
 ultima-orden.json
 quien-es-quien.json
 frases-cache.json
+bot.lock
 
 node_modules/
 *.exe

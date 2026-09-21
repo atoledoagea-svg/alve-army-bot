@@ -889,6 +889,7 @@ async function avisarVistasPendientes(cfg, estado, grupoId, ajustes, vistas, cal
     }
     suyo.account_id = v.accountId;                 // asi el resto lo trata como a cualquiera
     vistas.add(v.matchId);
+    guardarVistas(vistas);                         // anotado antes de cantar, no despues
     if (callado) continue;                         // al arrancar solo se anota
 
     for (const { ev, total } of eventosDePartida(cfg, estado, detalle, v.matchId, ajustes)) {
@@ -2409,6 +2410,12 @@ async function pasada(cfg, grupoId, vistas, ajustes, primera) {
     return 0;
   }
 
+  // Se anota en disco ANTES de cantar. Si el bot se corta entre el mensaje y
+  // el guardado -un Ctrl+C, un reinicio, WhatsApp colgado- el proceso que
+  // arranca despues no tiene la marca y vuelve a cantar la misma partida: es
+  // el "doble resultado" que salio en el grupo.
+  guardarVistas(vistas);
+
   let avisos = 0;
   for (const { matchId, seq } of nuevas.sort((a, b) => a.matchId - b.matchId)) {
     let detalle;
@@ -2417,6 +2424,7 @@ async function pasada(cfg, grupoId, vistas, ajustes, primera) {
     } catch (e) {
       log(`${matchId}: la API fallo (${e.message}); se reintenta despues`);
       vistas.delete(matchId);
+      guardarVistas(vistas);   // que el reintento sobreviva a un reinicio
       continue;
     }
     if (!detalle) continue;
@@ -2493,8 +2501,60 @@ async function probarUltima(cfg, grupoId, quien) {
   log(`listo: ${eventos.length} aviso(s) de prueba enviados`);
 }
 
+const CANDADO_PATH = path.join(BASE, "bot.lock");
+
+/** Deja tomado el bot para este proceso. Devuelve false si ya hay otro.
+ *
+ * Dos bots a la vez cantan todo dos veces: cada uno lleva su propia memoria de
+ * lo que ya aviso, y guardarla en disco no alcanza porque el otro la cargo al
+ * arrancar. Es facil que pase: INICIAR.bat, el arranque automatico y un
+ * "node bot.js" a mano son tres formas distintas de levantarlo.
+ */
+function tomarElCandado() {
+  try {
+    const viejo = Number(fs.readFileSync(CANDADO_PATH, "utf8"));
+    if (viejo && viejo !== process.pid) {
+      try {
+        process.kill(viejo, 0);   // no lo mata: solo pregunta si sigue vivo
+        return false;             // hay otro bot corriendo de verdad
+      } catch (e) {
+        // el proceso ya no existe: el candado quedo colgado de un cierre feo
+      }
+    }
+  } catch (e) {
+    // no hay candado todavia
+  }
+  try {
+    fs.writeFileSync(CANDADO_PATH, String(process.pid), "utf8");
+  } catch (e) {
+    return true;   // si no se puede escribir, mejor arrancar que no arrancar
+  }
+  const soltar = () => {
+    try {
+      if (Number(fs.readFileSync(CANDADO_PATH, "utf8")) === process.pid) {
+        fs.unlinkSync(CANDADO_PATH);
+      }
+    } catch (e) {
+      // si ya no esta, listo
+    }
+  };
+  process.on("exit", soltar);
+  for (const senal of ["SIGINT", "SIGTERM", "SIGHUP"]) {
+    process.on(senal, () => {
+      soltar();
+      process.exit(0);
+    });
+  }
+  return true;
+}
+
 async function main() {
   const cfg = cargarConfig();
+  if (!tomarElCandado()) {
+    console.log("\n  Ya hay otro bot corriendo. Cierro este para no avisar todo dos veces.");
+    console.log("  Si estas seguro de que no hay ninguno, borra bot.lock y volve a intentar.\n");
+    return;
+  }
   const prueba = process.argv.includes("--prueba");
   const probarUltimaPartida = process.argv.includes("--probar-ultima");
   const probarRecap = process.argv.includes("--probar-recap");
