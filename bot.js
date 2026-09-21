@@ -130,14 +130,57 @@ async function historial(cfg, accountId, cantidad = 5) {
   }));
 }
 
+/** El mismo detalle, pero pedido a OpenDota y con la forma de la Steam API.
+ *
+ * Hace falta porque GetMatchDetails viene tirando 500 hace rato: sin esto la
+ * partida de los que no exponen sus datos no se podia leer nunca, y el aviso
+ * al grupo se quedaba esperando las 8 horas de VIDA_POR_AVISAR y se descartaba.
+ * Los anonimos vienen con account_id vacio y aca se los marca como tales.
+ */
+async function detalleOpenDota(matchId) {
+  let d;
+  try {
+    d = await traerJSON(`https://api.opendota.com/api/matches/${matchId}`);
+  } catch (e) {
+    return null;
+  }
+  if (!d || !d.players || d.radiant_win === null || d.radiant_win === undefined) {
+    return null;   // la partida no termino, o OpenDota no la tiene todavia
+  }
+  return {
+    match_id: d.match_id,
+    start_time: d.start_time,
+    duration: d.duration,
+    lobby_type: d.lobby_type,
+    game_mode: d.game_mode,
+    radiant_win: d.radiant_win,
+    radiant_score: d.radiant_score,
+    dire_score: d.dire_score,
+    players: d.players.map((p) => ({
+      account_id: p.account_id || CUENTA_ANONIMA,
+      player_slot: p.player_slot || 0,
+      hero_id: p.hero_id,
+      kills: p.kills || 0,
+      deaths: p.deaths || 0,
+      assists: p.assists || 0,
+    })),
+  };
+}
+
 /** El detalle de una partida por su numero, sin pasar por el historial.
  *
  * Es la unica via para los que no exponen sus datos: su historial viene vacio,
- * pero la partida en si es publica para cualquiera que sepa el numero.
+ * pero la partida en si es publica para cualquiera que sepa el numero. Se
+ * prueba con Valve y, si no contesta, se cae a OpenDota.
  */
 async function detallePorNumero(cfg, matchId) {
-  const r = await steam(cfg, "GetMatchDetails", { match_id: matchId });
-  return r && r.match_id ? r : null;
+  try {
+    const r = await steam(cfg, "GetMatchDetails", { match_id: matchId });
+    if (r && r.match_id) return r;
+  } catch (e) {
+    // GetMatchDetails viene tirando 500: se prueba por el otro lado
+  }
+  return await detalleOpenDota(matchId);
 }
 
 /** GetMatchDetails devuelve 500 hace rato; este endpoint trae lo mismo. */
