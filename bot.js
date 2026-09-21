@@ -178,11 +178,9 @@ const GANA_DIRE = 3;             // k_EMatchOutcome_DireVictory
  * GetMatchDetails tira 500 hace rato y OpenDota tarda en indexar una partida
  * recien terminada (devuelve 404 hasta que la levanta).
  */
-async function detalleDelGC(matchId) {
-  if (!clienteDota || !marcador || !marcador.listo) return null;
-  let resp = null;
-  try {
-    resp = await new Promise((resolve) => {
+async function detalleDelGC(cfg, matchId) {
+  if (!clienteDota || !marcador) return null;
+  const resp = await conGC(cfg, () => new Promise((resolve) => {
       let listo = false;
       const terminar = (r) => {
         if (listo) return;
@@ -201,10 +199,7 @@ async function detalleDelGC(matchId) {
       clienteDota.requestMatchDetails(Number(matchId), (err, r) => {
         if (!err && r) terminar(r);
       });
-    });
-  } catch (e) {
-    return null;
-  }
+  }));
 
   const m = resp && resp.match;
   if (!m || !m.players || !m.players.length) return null;
@@ -248,7 +243,7 @@ async function detalleDelGC(matchId) {
  * si no esta conectado se cae a Valve y despues a OpenDota.
  */
 async function detallePorNumero(cfg, matchId) {
-  const delGC = await detalleDelGC(matchId);
+  const delGC = await detalleDelGC(cfg, matchId);
   if (delGC) return delGC;
   try {
     const r = await steam(cfg, "GetMatchDetails", { match_id: matchId });
@@ -1001,40 +996,86 @@ function vistasEntregadas(claves) {
   }
 }
 
-let ultimoIntentoMarcador = 0;
-const REINTENTO_MARCADOR_MS = 5 * 60 * 1000;
+// ---------------------------------------------------------- el Dota, a demanda
+//
+// El GC no puede quedar prendido. Mientras el bot tiene sesion abierta con el
+// Game Coordinator, Valve le deja de repartir la rich presence de los amigos,
+// que es de donde sale todo lo demas: quien esta en partida, con que heroe y
+// el WatchableGameID. O sea que dejarlo prendido se come su propia entrada.
+// Se prende el rato justo que hace falta y se vuelve a apagar.
 
-/** Vuelve a encender el Dota si el GC no contesto cuando arranco el bot.
- *
- * Sin esto, un timeout al arrancar dejaba al bot sin marcador (y sin poder
- * anotar el match_id de los que no exponen sus datos) hasta el proximo
- * reinicio, que podia ser dias despues.
- */
-async function asegurarMarcador() {
-  if (!marcador) return false;
-  if (marcador.listo) return true;
-  const ahora = Date.now();
-  if (ahora - ultimoIntentoMarcador < REINTENTO_MARCADOR_MS) return false;
-  ultimoIntentoMarcador = ahora;
-  log("marcador: el Dota no estaba listo, lo intento de nuevo");
+const GRACIA_GC_MS = 20 * 1000;    // margen antes de apagarlo, por si viene otro pedido
+let usosGC = 0;                    // cuantas cosas lo estan usando ahora mismo
+let apagarGCEn = null;             // el timer que lo apaga cuando no queda nadie
+const lobbysResueltas = new Set(); // `${accountId}-${lobbyId}` de los que ya averiguamos
+
+/** Prende el Dota, corre la tarea y lo deja programado para apagarse. */
+async function conGC(cfg, tarea) {
+  if (!clienteDota || !marcador) return null;
+  usosGC++;
+  if (apagarGCEn) {
+    clearTimeout(apagarGCEn);
+    apagarGCEn = null;
+  }
   try {
-    return await marcador.arrancar();
+    if (!(await marcador.arrancar())) return null;
+    return await tarea();
   } catch (e) {
-    return false;
+    log(`marcador: fallo el pedido al Dota (${e.message})`);
+    return null;
+  } finally {
+    usosGC--;
+    programarApagadoGC(cfg);
   }
 }
 
-/** Le agrega a cada uno como va su partida (marcador y minuto). */
+function programarApagadoGC(cfg) {
+  if (apagarGCEn) return;
+  apagarGCEn = setTimeout(() => {
+    apagarGCEn = null;
+    if (usosGC > 0) return;
+    if (lobby && lobby.listo) return;   // hay una lobby de la liga abierta: se deja
+    apagarGC(cfg);
+  }, GRACIA_GC_MS);
+}
+
+function apagarGC(cfg) {
+  if (!clienteDota || !marcador || !marcador.listo) return;
+  try {
+    clienteDota.exit();
+  } catch (e) {
+    // si ya estaba apagado, no pasa nada
+  }
+  marcador.listo = false;
+  // exit() deja la cuenta sin juego, y figurar "jugando al Dota" es justamente
+  // lo que hace que Valve reparta la presencia de los amigos: se vuelve a poner
+  try {
+    presencia.cliente.gamesPlayed(cfg.steam_en_dota === false ? [] : [Number(APPID_DOTA)]);
+  } catch (e) {
+    // si Steam no esta, la proxima reconexion lo deja bien igual
+  }
+  log("marcador: apago el Dota, asi Steam vuelve a mandar la presencia");
+}
+
+/** Le agrega a cada uno como va su partida (marcador y minuto).
+ *
+ * Solo enciende el Dota si hace falta de verdad: hay un privado en partida del
+ * que todavia no sabemos el numero. Si ya esta encendido (por una lobby de la
+ * liga), se aprovecha y se le pone el marcador a todos.
+ */
 async function sumarMarcadores(actual, cfg, privados) {
-  if (!(await asegurarMarcador())) return;
   const enPartida = [...actual.values()].filter((i) => i.situacion === "partida" && i.partida);
   if (!enPartida.length) return;
-  let juegos;
-  try {
-    juegos = await marcador.consultar(enPartida.map((i) => i.partida));
-  } catch (e) {
-    return; // sin marcador igual se muestra el heroe
-  }
+
+  const porAveriguar = enPartida.filter((i) => {
+    if (!privados.has(i.nombre)) return false;
+    const aid = [...actual.entries()].find(([, v]) => v === i)?.[0];
+    return aid && !lobbysResueltas.has(`${aid}-${i.partida}`);
+  });
+  if (!porAveriguar.length && !(marcador && marcador.listo)) return;
+
+  const juegos = await conGC(cfg, () => marcador.consultar(enPartida.map((i) => i.partida)));
+  if (!juegos) return;
   // el KDA de cada uno sale del servidor donde se esta jugando
   const kdas = new Map();
   for (const juego of new Set(juegos.values())) {
@@ -1058,6 +1099,9 @@ async function sumarMarcadores(actual, cfg, privados) {
     // si no expone sus datos, esta es la unica forma de que la liga se entere
     if (yo && juego.match_id && privados.has(info.nombre)) {
       anotarVista(cfg, juego.match_id, aid, yo.hero_id, yo.radiant);
+      // ya sabemos el numero: no hay que volver a prender el Dota por el
+      // mismo tipo en la misma lobby
+      lobbysResueltas.add(`${aid}-${info.partida}`);
     }
   }
 }
@@ -2523,9 +2567,11 @@ async function main() {
     if (!ok) log("steam: no pude conectar; sigo con el aviso aproximado (abrio el Dota)");
     if (ok && presencia.cliente) {
       try {
+        // queda armado pero APAGADO: encenderlo corta la rich presence, asi
+        // que se prende solo cuando hace falta (ver conGC)
         clienteDota = crearClienteDota(presencia.cliente);
         marcador = new Marcador(clienteDota, log);
-        marcador.arrancar().catch(() => {}); // si falla, se pierde solo el marcador
+        log("marcador: el Dota queda listo para encenderse cuando haga falta");
       } catch (e) {
         log(`marcador: no pude usar la libreria de Dota (${e.message}); sigo sin el marcador`);
       }
