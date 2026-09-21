@@ -167,13 +167,89 @@ async function detalleOpenDota(matchId) {
   };
 }
 
+const ESPERA_GC_MS = 15000;      // lo que aguantamos una respuesta del GC
+const GANA_RADIANT = 2;          // k_EMatchOutcome_RadVictory
+const GANA_DIRE = 3;             // k_EMatchOutcome_DireVictory
+
+/** El detalle de una partida pedido al Game Coordinator, con forma de Steam API.
+ *
+ * Es la via buena para los que no exponen sus datos: Valve contesta en el acto
+ * y para cualquier numero de partida. Las otras dos no sirven apenas termina:
+ * GetMatchDetails tira 500 hace rato y OpenDota tarda en indexar una partida
+ * recien terminada (devuelve 404 hasta que la levanta).
+ */
+async function detalleDelGC(matchId) {
+  if (!clienteDota || !marcador || !marcador.listo) return null;
+  let resp = null;
+  try {
+    resp = await new Promise((resolve) => {
+      let listo = false;
+      const terminar = (r) => {
+        if (listo) return;
+        listo = true;
+        clearTimeout(corte);
+        clienteDota.removeListener("matchDetailsData", alLlegar);
+        resolve(r);
+      };
+      const alLlegar = (id, r) => {
+        if (String(id) === String(matchId)) terminar(r);
+      };
+      const corte = setTimeout(() => terminar(null), ESPERA_GC_MS);
+      // se escucha por los dos lados: el evento y el callback, por si el
+      // puente a steam-user se come alguno
+      clienteDota.on("matchDetailsData", alLlegar);
+      clienteDota.requestMatchDetails(Number(matchId), (err, r) => {
+        if (!err && r) terminar(r);
+      });
+    });
+  } catch (e) {
+    return null;
+  }
+
+  const m = resp && resp.match;
+  if (!m || !m.players || !m.players.length) return null;
+  const fin = m.match_outcome;
+  const ganoRadiant = fin === GANA_RADIANT || fin === "k_EMatchOutcome_RadVictory";
+  const terminada = ganoRadiant || fin === GANA_DIRE || fin === "k_EMatchOutcome_DireVictory";
+  if (!terminada) return null;   // sigue en curso: se reintenta en la proxima vuelta
+
+  const jugadores = m.players.map((p) => ({
+    account_id: Number(p.account_id) || CUENTA_ANONIMA,
+    player_slot: Number(p.player_slot) || 0,
+    hero_id: Number(p.hero_id),
+    kills: Number(p.kills) || 0,
+    deaths: Number(p.deaths) || 0,
+    assists: Number(p.assists) || 0,
+  }));
+  // el score es la suma de kills de cada bando, igual que lo arma la Steam API
+  const kills = (radiant) => jugadores
+    .filter((p) => (p.player_slot < 128) === radiant)
+    .reduce((t, p) => t + p.kills, 0);
+
+  return {
+    match_id: String(m.match_id),
+    match_seq_num: m.match_seq_num ? String(m.match_seq_num) : null,
+    start_time: Number(m.startTime) || 0,
+    duration: Number(m.duration) || 0,
+    lobby_type: Number(m.lobby_type),
+    game_mode: Number(m.game_mode),
+    radiant_win: ganoRadiant,
+    radiant_score: kills(true),
+    dire_score: kills(false),
+    players: jugadores,
+  };
+}
+
 /** El detalle de una partida por su numero, sin pasar por el historial.
  *
  * Es la unica via para los que no exponen sus datos: su historial viene vacio,
  * pero la partida en si es publica para cualquiera que sepa el numero. Se
- * prueba con Valve y, si no contesta, se cae a OpenDota.
+ * prueba con el Game Coordinator, que es el que contesta rapido y siempre, y
+ * si no esta conectado se cae a Valve y despues a OpenDota.
  */
 async function detallePorNumero(cfg, matchId) {
+  const delGC = await detalleDelGC(matchId);
+  if (delGC) return delGC;
   try {
     const r = await steam(cfg, "GetMatchDetails", { match_id: matchId });
     if (r && r.match_id) return r;
