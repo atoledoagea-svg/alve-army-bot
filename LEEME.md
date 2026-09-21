@@ -42,6 +42,11 @@ con tal héroe".
 Cada jugador tiene que tenerlo de amigo, y en Steam → Ajustes → Privacidad, los
 **detalles del juego** en Público o Solo amigos.
 
+Eso también es lo que permite puntuar a los que tienen las partidas en privado
+(`!privados` los lista): mientras juegan, el bot anota con qué héroe andan y a
+qué hora, y la liga los reconoce después entre los anónimos de la partida. Si el
+bot está apagado o no lo tienen de amigo, esas partidas no se recuperan.
+
 ## Actualizaciones
 
 **No hay que hacer nada.** Cada 15 minutos el bot mira si hay una versión nueva;

@@ -659,7 +659,7 @@ async function publicarPresencia(cfg, actual, steamConectado) {
   const reciente = ahora - ultimoEnvio < LATIDO_MS;
   // se escribe si cambio algo, y si no, cada tanto igual: ese latido es lo
   // unico que permite saber desde la web si el bot sigue vivo
-  if (igual && reciente && !vistasPendientes.size) return;
+  if (igual && reciente && !vistasPendientes.size && !rastrosPendientes.size) return;
   ultimaHuella = huella;
   ultimoEnvio = ahora;
 
@@ -667,15 +667,18 @@ async function publicarPresencia(cfg, actual, steamConectado) {
   // las partidas vistas en vivo van pegadas aca: no hay lugar para otra funcion
   // en Vercel, y esta llamada ya se hace cada vuelta
   const vistas = [...vistasPendientes.entries()];
+  const rastros = [...rastrosPendientes.entries()];
   try {
     const r = await fetch(`${cfg.web_publica}/api/presencia`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ clave: cfg.admin_key, steam: Boolean(steamConectado),
                              whatsapp: waConectado, version: versionBot, jugadores,
-                             vistas: vistas.map(([, v]) => v) }),
+                             vistas: vistas.map(([, v]) => v),
+                             rastros: rastros.map(([, v]) => v) }),
     });
     if (r.ok && vistas.length) vistasEntregadas(vistas.map(([c]) => c));
+    if (r.ok && rastros.length) rastrosEntregados(rastros.map(([c]) => c));
     if (r.ok) resultado = "ok";
     else if (r.status === 403) resultado = "clave-mal";
     else resultado = `error-${r.status}`;
@@ -793,6 +796,51 @@ async function avisarVistasPendientes(cfg, estado, grupoId, ajustes, vistas, cal
 
 const vistasPendientes = new Map();   // clave -> dato, hasta que la web las reciba
 
+// El rastro de los que no exponen sus datos: con que heroe y en que rato
+// estuvieron jugando. En la partida figuran como anonimos, asi que esto es lo
+// unico que despues permite reconocerlos. A diferencia de las "vistas", no
+// necesita el Game Coordinator ni que la partida se pueda espectear: alcanza
+// con verlos en partida, que es justo lo que pasa en las lobbys de la liga.
+const RASTRO_CORTE_MS = 20 * 60 * 1000;   // mas de esto sin verlo: ya es otra partida
+const RASTRO_REENVIO_MS = 2 * 60 * 1000;  // cada cuanto se estira el "hasta"
+const rastrosActivos = new Map();    // accountId -> {heroe, desde, hasta, visto, enviado}
+const rastrosPendientes = new Map(); // clave -> dato, hasta que la web lo reciba
+
+function anotarRastro(accountId, heroeId) {
+  if (!accountId || !heroeId) return;
+  const heroe = String(heroeId).toLowerCase();
+  const ahora = Date.now();
+  const seg = Math.floor(ahora / 1000);
+  let r = rastrosActivos.get(accountId);
+  if (!r || r.heroe !== heroe || ahora - r.visto > RASTRO_CORTE_MS) {
+    r = { heroe, desde: seg, hasta: seg, visto: ahora, enviado: 0 };
+    rastrosActivos.set(accountId, r);
+  }
+  r.hasta = seg;
+  r.visto = ahora;
+  // se manda apenas arranca y despues cada tanto, para ir estirando el final
+  if (ahora - r.enviado < RASTRO_REENVIO_MS) return;
+  r.enviado = ahora;
+  rastrosPendientes.set(`${accountId}-${r.desde}`, {
+    account_id: accountId, heroe: r.heroe, desde: r.desde, hasta: r.hasta,
+  });
+}
+
+/** Deja el rastro de los que no exponen sus datos mientras estan en partida. */
+function anotarRastros(actual, cfg, privados) {
+  if (!cfg.admin_key || !privados.size) return;
+  for (const [aid, info] of actual) {
+    if (info.situacion !== "partida") continue;
+    if (!privados.has(info.nombre)) continue;
+    anotarRastro(aid, info.heroe_id);
+  }
+}
+
+/** Los da por entregados: no se vuelven a mandar hasta que se estiren. */
+function rastrosEntregados(claves) {
+  for (const c of claves) rastrosPendientes.delete(c);
+}
+
 function anotarVista(cfg, matchId, accountId, heroId, radiant) {
   if (!cfg.admin_key || !matchId || !accountId) return;
   const clave = `${matchId}-${accountId}`;
@@ -833,16 +881,10 @@ function vistasEntregadas(claves) {
 }
 
 /** Le agrega a cada uno como va su partida (marcador y minuto). */
-async function sumarMarcadores(actual, cfg) {
+async function sumarMarcadores(actual, cfg, privados) {
   if (!marcador || !marcador.listo) return;
   const enPartida = [...actual.values()].filter((i) => i.situacion === "partida" && i.partida);
   if (!enPartida.length) return;
-  let privados = new Set();
-  try {
-    privados = new Set((await traerEstado(cfg)).privados || []);
-  } catch (e) {
-    privados = new Set();
-  }
   let juegos;
   try {
     juegos = await marcador.consultar(enPartida.map((i) => i.partida));
@@ -905,7 +947,15 @@ async function revisarPartidas(cfg, estado, grupoId) {
   } catch (e) {
     return false;
   }
-  await sumarMarcadores(actual, cfg);
+  // quienes no exponen sus datos: lo dice la liga, y se pregunta una sola vez
+  let privados = new Set();
+  try {
+    privados = new Set((await traerEstado(cfg)).privados || []);
+  } catch (e) {
+    privados = new Set();
+  }
+  await sumarMarcadores(actual, cfg, privados);
+  anotarRastros(actual, cfg, privados);
   ultimaPresencia = actual;
   const enPartida = [...actual.values()].filter((i) => i.situacion === "partida").length;
   if (actual.size !== vistosPorSteam) {
