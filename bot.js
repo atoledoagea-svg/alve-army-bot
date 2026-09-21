@@ -36,6 +36,7 @@ const PREMIOS_PATH = path.join(BASE, "ultimo-premio.json");
 const ORDEN_PATH = path.join(BASE, "ultima-orden.json");
 const VISTAS_PATH = path.join(BASE, "vistas-en-vivo.json");
 const POR_AVISAR_PATH = path.join(BASE, "vistas-por-avisar.json");
+const PRIVACIDAD_PATH = path.join(BASE, "privacidad.json");
 const QUIEN_PATH = path.join(BASE, "quien-es-quien.json");
 
 const LOBBY_PRIVADA = 1;
@@ -1043,6 +1044,37 @@ async function textoPrivados(cfg) {
     "Con las partidas en privado la liga no les puede contar nada: lo que juegan no suma.",
     "Para arreglarlo: Dota 2 > Configuracion > Opciones > Social > Exponer datos publicos de partidas.",
   ].join("\n");
+}
+
+const leerPrivacidad = () => {
+  try {
+    return JSON.parse(fs.readFileSync(PRIVACIDAD_PATH, "utf8"));
+  } catch (e) {
+    return null;   // primera vez: no hay con que comparar
+  }
+};
+
+/** Quien cambio de publico a privado (o al reves) desde la ultima vuelta.
+ *
+ * lecturas: {account_id: true si esta oculto}. Solo cuenta a los que ya
+ * conociamos: el que se suma a la liga en privado no es noticia.
+ */
+function cambiosDePrivacidad(antes, lecturas, nombres) {
+  const cambios = [];
+  for (const [aid, oculto] of Object.entries(lecturas)) {
+    if (!antes || !(aid in antes) || antes[aid] === oculto) continue;
+    cambios.push({ nombre: nombres[aid] || aid, oculto });
+  }
+  return cambios;
+}
+
+function textoCambioPrivacidad({ nombre, oculto }) {
+  if (oculto) {
+    return `\u{1F414} *${nombre}* acaba de desactivar sus partidas para que el bot no las lea. Cagon.\n` +
+      "Lo que juegue desde ahora no suma. Para volver: Dota 2 > Configuracion > " +
+      "Opciones > Social > Exponer datos publicos de partidas.";
+  }
+  return `\u{1F513} *${nombre}* volvio a activar sus partidas. Ya cuenta de nuevo.`;
 }
 
 async function textoCagones(cfg, soloElPrimero = false) {
@@ -2081,9 +2113,11 @@ async function pasada(cfg, grupoId, vistas, ajustes, primera) {
   }
 
   const nuevas = [];
+  const lecturas = {};   // account_id -> true si Steam dice que esta en privado
   for (const j of estado.jugadores) {
     try {
       const partidas = await historial(cfg, j.account_id);
+      lecturas[j.account_id] = partidas === null;
       if (partidas) {
         for (const p of partidas) {
           if (!vistas.has(p.matchId)) {
@@ -2096,6 +2130,28 @@ async function pasada(cfg, grupoId, vistas, ajustes, primera) {
       log(`Steam no respondio para ${j.nombre} (${e.message})`);
     }
     await dormir(1000);
+  }
+
+  // quien apago (o prendio) sus partidas desde la vuelta anterior.
+  // Al arrancar no se compara: si algo cambio con el bot apagado, lo ve la
+  // vuelta siguiente contra lo que ya estaba guardado.
+  const privacidadAntes = leerPrivacidad();
+  if (!primera || !privacidadAntes) {
+    const nombres = Object.fromEntries(estado.jugadores.map((j) => [j.account_id, j.nombre]));
+    for (const cambio of cambiosDePrivacidad(privacidadAntes, lecturas, nombres)) {
+      const texto = textoCambioPrivacidad(cambio);
+      log(texto.replace(/\n/g, " | "));
+      if (grupoId) {
+        const activo = await asegurarConexion(cfg);
+        await activo.sendMessage(grupoId, { text: texto });
+      }
+    }
+    try {
+      fs.writeFileSync(PRIVACIDAD_PATH,
+        JSON.stringify({ ...(privacidadAntes || {}), ...lecturas }), "utf8");
+    } catch (e) {
+      log(`no pude guardar quien esta en privado (${e.message})`);
+    }
   }
 
   if (primera) {
