@@ -16,34 +16,53 @@ class Marcador {
     this.clienteSteam = clienteSteam;
     this.dota = null;
     this.listo = false;
+    this.encendiendo = null;   // el intento de encendido que esta en curso
   }
 
-  /** Enciende el Dota en la cuenta bot. Devuelve true si el GC quedo listo. */
+  /** Enciende el Dota en la cuenta bot. Devuelve true si el GC quedo listo.
+   *
+   * Se puede volver a llamar: el Game Coordinator tarda en contestar mas
+   * seguido de lo que uno quisiera, y antes un solo timeout al arrancar dejaba
+   * al bot sin marcador hasta el proximo reinicio.
+   */
   arrancar() {
     if (this.listo) return Promise.resolve(true);
-    return new Promise((resolve) => {
-      try {
-        Dota2 = Dota2 || require("dota2");
-        this.dota = new Dota2.Dota2Client(this.clienteSteam, false, false);
-      } catch (e) {
-        this.log(`marcador: no pude usar la libreria de Dota (${e.message})`);
-        return resolve(false);
-      }
-      const corte = setTimeout(() => {
-        this.log("marcador: el Dota no contesto a tiempo; sigo sin el marcador");
-        resolve(false);
-      }, 30000);
+    if (this.encendiendo) return this.encendiendo;   // ya hay un intento en curso
+    try {
+      Dota2 = Dota2 || require("dota2");
+    } catch (e) {
+      this.log(`marcador: no pude usar la libreria de Dota (${e.message})`);
+      return Promise.resolve(false);
+    }
+    // el cliente se crea una sola vez: cada uno se engancha al de Steam, asi
+    // que armar uno nuevo en cada reintento iria dejando oyentes colgados
+    if (!this.dota) {
+      this.dota = new Dota2.Dota2Client(this.clienteSteam, false, false);
       this.dota.on("ready", () => {
-        clearTimeout(corte);
         this.listo = true;
         this.log("marcador: conectado al Dota, puedo ver como van las partidas");
-        resolve(true);
       });
       this.dota.on("unready", () => {
         this.listo = false;
+        this.log("marcador: el Dota se desconecto; lo reintento mas adelante");
       });
+    }
+    this.encendiendo = new Promise((resolve) => {
+      const alEstar = () => {
+        clearTimeout(corte);
+        this.encendiendo = null;
+        resolve(true);
+      };
+      const corte = setTimeout(() => {
+        this.dota.removeListener("ready", alEstar);
+        this.encendiendo = null;
+        this.log("marcador: el Dota no contesto a tiempo; sigo sin el marcador");
+        resolve(false);
+      }, 30000);
+      this.dota.once("ready", alEstar);
       this.dota.launch();
     });
+    return this.encendiendo;
   }
 
   /**

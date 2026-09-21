@@ -806,7 +806,7 @@ const RASTRO_REENVIO_MS = 2 * 60 * 1000;  // cada cuanto se estira el "hasta"
 const rastrosActivos = new Map();    // accountId -> {heroe, desde, hasta, visto, enviado}
 const rastrosPendientes = new Map(); // clave -> dato, hasta que la web lo reciba
 
-function anotarRastro(accountId, heroeId) {
+function anotarRastro(accountId, heroeId, nombre) {
   if (!accountId || !heroeId) return;
   const heroe = String(heroeId).toLowerCase();
   const ahora = Date.now();
@@ -815,6 +815,7 @@ function anotarRastro(accountId, heroeId) {
   if (!r || r.heroe !== heroe || ahora - r.visto > RASTRO_CORTE_MS) {
     r = { heroe, desde: seg, hasta: seg, visto: ahora, enviado: 0 };
     rastrosActivos.set(accountId, r);
+    log(`rastro: ${nombre || accountId} esta jugando con ${heroe} (tiene las partidas en privado)`);
   }
   r.hasta = seg;
   r.visto = ahora;
@@ -832,7 +833,7 @@ function anotarRastros(actual, cfg, privados) {
   for (const [aid, info] of actual) {
     if (info.situacion !== "partida") continue;
     if (!privados.has(info.nombre)) continue;
-    anotarRastro(aid, info.heroe_id);
+    anotarRastro(aid, info.heroe_id, info.nombre);
   }
 }
 
@@ -880,9 +881,32 @@ function vistasEntregadas(claves) {
   }
 }
 
+let ultimoIntentoMarcador = 0;
+const REINTENTO_MARCADOR_MS = 5 * 60 * 1000;
+
+/** Vuelve a encender el Dota si el GC no contesto cuando arranco el bot.
+ *
+ * Sin esto, un timeout al arrancar dejaba al bot sin marcador (y sin poder
+ * anotar el match_id de los que no exponen sus datos) hasta el proximo
+ * reinicio, que podia ser dias despues.
+ */
+async function asegurarMarcador() {
+  if (!marcador) return false;
+  if (marcador.listo) return true;
+  const ahora = Date.now();
+  if (ahora - ultimoIntentoMarcador < REINTENTO_MARCADOR_MS) return false;
+  ultimoIntentoMarcador = ahora;
+  log("marcador: el Dota no estaba listo, lo intento de nuevo");
+  try {
+    return await marcador.arrancar();
+  } catch (e) {
+    return false;
+  }
+}
+
 /** Le agrega a cada uno como va su partida (marcador y minuto). */
 async function sumarMarcadores(actual, cfg, privados) {
-  if (!marcador || !marcador.listo) return;
+  if (!(await asegurarMarcador())) return;
   const enPartida = [...actual.values()].filter((i) => i.situacion === "partida" && i.partida);
   if (!enPartida.length) return;
   let juegos;
