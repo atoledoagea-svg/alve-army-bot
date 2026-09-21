@@ -15,7 +15,7 @@ const P = require("pino");
 const qrcode = require("qrcode-terminal");
 const baileys = require("@whiskeysockets/baileys");
 const { PresenciaSteam } = require("./steam-presencia.js");
-const { LobbyDota } = require("./dota-lobby.js");
+const { LobbyDota, crearClienteDota } = require("./dota-lobby.js");
 const { Marcador } = require("./marcador.js");
 const { PresenciaDiscord } = require("./discord-presencia.js");
 const actualizador = require("./actualizador.js");
@@ -608,6 +608,7 @@ let vistosPorSteam = -1; // para no repetir el mismo aviso cada vuelta
 let avisoWeb = null;     // idem, para el estado del envio a la web
 let ultimaPresencia = new Map(); // lo ultimo que vio Steam, para publicarlo igual
 let marcador = null;     // el que sabe como va cada partida en curso
+let clienteDota = null;  // la conexion con el Game Coordinator, una sola para todo
 let discord = null;      // la conexion con Discord, para ver quien esta ahi
 let huellaDiscord = null; // para no reescribir la misma lista
 let ultimaHuella = null; // para no reescribir lo mismo una y otra vez
@@ -1835,7 +1836,7 @@ async function prepararLobby(cfg, grupoId) {
   if (!presencia || !presencia.listo || !presencia.cliente) return null;
   if (!lobby) {
     try {
-      lobby = new LobbyDota(presencia.cliente, log);
+      lobby = new LobbyDota(presencia.cliente, log, clienteDota);
     } catch (e) {
       log(`lobby: no pude usar la libreria de Dota (${e.stack || e.message}); el resto sigue funcionando`);
       return null;
@@ -2402,8 +2403,13 @@ async function main() {
     const ok = await presencia.conectar();
     if (!ok) log("steam: no pude conectar; sigo con el aviso aproximado (abrio el Dota)");
     if (ok && presencia.cliente) {
-      marcador = new Marcador(presencia.cliente, log);
-      marcador.arrancar().catch(() => {}); // si falla, se pierde solo el marcador
+      try {
+        clienteDota = crearClienteDota(presencia.cliente);
+        marcador = new Marcador(clienteDota, log);
+        marcador.arrancar().catch(() => {}); // si falla, se pierde solo el marcador
+      } catch (e) {
+        log(`marcador: no pude usar la libreria de Dota (${e.message}); sigo sin el marcador`);
+      }
     }
   } else {
     log("steam: sin cuenta bot configurada (avisare cuando abran el Dota)");

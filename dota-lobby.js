@@ -61,6 +61,30 @@ class PuenteUsuario {
   }
 }
 
+/** Arma el cliente de Dota ya enchufado a steam-user.
+ *
+ * La libreria habla el idioma de node-steam y el bot usa steam-user: los
+ * puentes traducen, y hay que volver a colgar el repartidor de mensajes porque
+ * el que arma la libreria quedo atado a la pieza vieja. Sin esto el Game
+ * Coordinator no contesta nunca, por mas que se lo reintente.
+ *
+ * El cliente es uno solo para todo el bot: el marcador y las lobbys comparten
+ * la misma conversacion con Valve.
+ */
+function crearClienteDota(clienteSteam) {
+  const dota = new (cargarDota2().Dota2Client)(clienteSteam, false, false);
+  dota._gc = new PuenteGC(clienteSteam);
+  dota._user = new PuenteUsuario(clienteSteam);
+  dota._protoBufHeader = { msg: "", proto: {} };
+  dota._gc.on("message", (cabecera, cuerpo, callback) => {
+    const manejador = dota._handlers[cabecera.msg];
+    if (!manejador) return;
+    if (callback) manejador.call(dota, cuerpo, callback);
+    else manejador.call(dota, cuerpo);
+  });
+  return dota;
+}
+
 const STEAM64_OFFSET = 76561197960265728n;
 const idDeCuenta = (steamid) => Number(BigInt(String(steamid)) - STEAM64_OFFSET);
 
@@ -72,23 +96,10 @@ const NOMBRE_SALA = "AlveArmy";
 const CLAVE_SALA = "AlveArmy321";
 
 class LobbyDota {
-  constructor(clienteSteam, log) {
+  constructor(clienteSteam, log, clienteDota) {
     this.log = log;
     this.cliente = clienteSteam;
-    this.dota = new (cargarDota2().Dota2Client)(clienteSteam, false, false);
-
-    // La libreria ya se armo sus piezas de node-steam, que con steam-user no
-    // sirven: las cambiamos por los puentes y volvemos a colgar el repartidor
-    // de mensajes, que habia quedado atado a la pieza vieja.
-    this.dota._gc = new PuenteGC(clienteSteam);
-    this.dota._user = new PuenteUsuario(clienteSteam);
-    this.dota._protoBufHeader = { msg: "", proto: {} };
-    this.dota._gc.on("message", (cabecera, cuerpo, callback) => {
-      const manejador = this.dota._handlers[cabecera.msg];
-      if (!manejador) return;
-      if (callback) manejador.call(this.dota, cuerpo, callback);
-      else manejador.call(this.dota, cuerpo);
-    });
+    this.dota = clienteDota || crearClienteDota(clienteSteam);
     this.listo = false;
     this.lobbyActual = null;   // {nombre, clave, creada}
     this.alTerminar = null;    // callback con el resultado
@@ -309,4 +320,4 @@ class LobbyDota {
   }
 }
 
-module.exports = { LobbyDota };
+module.exports = { LobbyDota, crearClienteDota };

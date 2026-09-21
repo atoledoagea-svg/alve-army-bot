@@ -5,18 +5,30 @@
  * el resultado. Eso se le pide al Game Coordinator de Dota: con el id de lobby
  * que viene en la presencia (WatchableGameID) devuelve el marcador, el minuto
  * y quienes juegan de cada lado.
+ *
+ * El cliente de Dota se lo dan armado (crearClienteDota, en dota-lobby.js):
+ * la libreria habla node-steam y el bot usa steam-user, asi que sin esos
+ * puentes el GC no contesta nunca. Antes esta clase se armaba el suyo pelado y
+ * por eso el marcador no anduvo jamas.
  */
-let Dota2 = null;
-
 const ESPERA_MS = 12000; // lo que aguantamos una respuesta del GC
 
 class Marcador {
-  constructor(clienteSteam, log) {
+  constructor(clienteDota, log) {
     this.log = log;
-    this.clienteSteam = clienteSteam;
-    this.dota = null;
+    this.dota = clienteDota;
     this.listo = false;
     this.encendiendo = null;   // el intento de encendido que esta en curso
+    if (this.dota) {
+      this.dota.on("ready", () => {
+        this.listo = true;
+        this.log("marcador: conectado al Dota, puedo ver como van las partidas");
+      });
+      this.dota.on("unready", () => {
+        this.listo = false;
+        this.log("marcador: el Dota se desconecto; lo reintento mas adelante");
+      });
+    }
   }
 
   /** Enciende el Dota en la cuenta bot. Devuelve true si el GC quedo listo.
@@ -27,26 +39,8 @@ class Marcador {
    */
   arrancar() {
     if (this.listo) return Promise.resolve(true);
+    if (!this.dota) return Promise.resolve(false);
     if (this.encendiendo) return this.encendiendo;   // ya hay un intento en curso
-    try {
-      Dota2 = Dota2 || require("dota2");
-    } catch (e) {
-      this.log(`marcador: no pude usar la libreria de Dota (${e.message})`);
-      return Promise.resolve(false);
-    }
-    // el cliente se crea una sola vez: cada uno se engancha al de Steam, asi
-    // que armar uno nuevo en cada reintento iria dejando oyentes colgados
-    if (!this.dota) {
-      this.dota = new Dota2.Dota2Client(this.clienteSteam, false, false);
-      this.dota.on("ready", () => {
-        this.listo = true;
-        this.log("marcador: conectado al Dota, puedo ver como van las partidas");
-      });
-      this.dota.on("unready", () => {
-        this.listo = false;
-        this.log("marcador: el Dota se desconecto; lo reintento mas adelante");
-      });
-    }
     this.encendiendo = new Promise((resolve) => {
       const alEstar = () => {
         clearTimeout(corte);
@@ -150,12 +144,12 @@ class Marcador {
     return salida;
   }
 
+  /** Deja de usar el marcador.
+   *
+   * No apaga el cliente de Dota: es compartido con las lobbys de la liga, y
+   * cerrarlo desde aca las dejaria sin Game Coordinator.
+   */
   cerrar() {
-    try {
-      if (this.dota) this.dota.exit();
-    } catch (e) {
-      // si ya estaba cerrado, no pasa nada
-    }
     this.listo = false;
   }
 }
