@@ -527,7 +527,9 @@ async function lineaCasual(cfg, ev) {
 }
 
 /** Arma los avisos de una partida para los jugadores registrados presentes. */
-function eventosDePartida(cfg, estado, detalle, matchId, ajustes) {
+// soloPara: cuando se canta la partida de uno solo (el que estaba en privado).
+// Los demas ya se avisaron por la via normal y volver a contarlos les mueve el total.
+function eventosDePartida(cfg, estado, detalle, matchId, ajustes, soloPara = null) {
   const jugadores = new Map(estado.jugadores.map((j) => [j.account_id, j]));
   const lobby = detalle.lobby_type;
   if (lobby !== LOBBY_PRIVADA && lobby !== LOBBY_RANKED && lobby !== LOBBY_PUBLICA) return [];
@@ -544,13 +546,22 @@ function eventosDePartida(cfg, estado, detalle, matchId, ajustes) {
   if (modo === "casual") return [];
   const juego = detalle.game_mode === MODO_TURBO ? "TURBO" : "NORMAL";
 
-  return presentes.map((p) => {
+  const paraAvisar = soloPara
+    ? presentes.filter((p) => p.account_id === soloPara)
+    : presentes;
+
+  return paraAvisar.map((p) => {
     const esRadiant = (p.player_slot || 0) < 128;
     const gano = esRadiant === !!detalle.radiant_win ? 1 : 0;
     const puntos = modo === "casual" ? 0 : gano ? cfg.puntos_victoria : cfg.puntos_derrota;
     const clave = `${modo}:${p.account_id}`;
-    const base = (jugadores.get(p.account_id)[modo] || 0) + (ajustes.get(clave) || 0);
-    ajustes.set(clave, (ajustes.get(clave) || 0) + puntos);
+    const publicado = jugadores.get(p.account_id)[modo] || 0;
+    const base = publicado + (ajustes.get(clave) || 0);
+    // la liga no deja bajar de 0 y lo aplica partida por partida: el que pierde
+    // estando en 0 no pierde nada. Si aca se guardara el negativo, los avisos
+    // siguientes quedarian cortos para siempre.
+    const nuevoTotal = Math.max(0, base + puntos);
+    ajustes.set(clave, nuevoTotal - publicado);
     return {
       ev: {
         modo,
@@ -569,7 +580,7 @@ function eventosDePartida(cfg, estado, detalle, matchId, ajustes) {
           esRadiant ? detalle.dire_score : detalle.radiant_score,
         ],
       },
-      total: Math.max(0, base + puntos),
+      total: nuevoTotal,
     };
   });
 }
@@ -892,10 +903,8 @@ async function avisarVistasPendientes(cfg, estado, grupoId, ajustes, vistas, cal
     guardarVistas(vistas);                         // anotado antes de cantar, no despues
     if (callado) continue;                         // al arrancar solo se anota
 
-    for (const { ev, total } of eventosDePartida(cfg, estado, detalle, v.matchId, ajustes)) {
-      if (ev.nombre !== (estado.jugadores.find((j) => j.account_id === v.accountId) || {}).nombre) {
-        continue;                                  // los demas ya se avisaron solos
-      }
+    for (const { ev, total } of
+         eventosDePartida(cfg, estado, detalle, v.matchId, ajustes, v.accountId)) {
       const texto = await lineaEvento(cfg, ev, total);
       log(texto);
       if (grupoId) {
