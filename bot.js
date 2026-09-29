@@ -1512,9 +1512,13 @@ async function revisarPuntero(cfg, estado, grupoId, callado) {
     const antes = previos[t.clave];
     if (callado || !antes || antes.nombre === p.nombre) continue;
     const quien = p.empatados.length > 1 ? p.empatados.join(" y ") : p.nombre;
+    // los puntos del destronado, como estan ahora: los guardados son de cuando
+    // llego a puntero y para entonces puede haber perdido media tabla
+    const ficha = estado.jugadores.find((j) => j.nombre === antes.nombre);
+    const puntosAntes = ficha && ficha[t.clave] !== undefined ? ficha[t.clave] : antes.puntos;
     avisos.push(
       `\u{1F451} *NUEVO PUNTERO DE ${t.etiqueta}*: ${quien} con ${p.puntos} pts\n` +
-      `Le saco el puesto a ${antes.nombre} (${antes.puntos} pts)`);
+      `Le saco el puesto a ${antes.nombre}, que quedo con ${puntosAntes} pts`);
   }
   guardarPunteros(nuevos);
   for (const texto of avisos) {
