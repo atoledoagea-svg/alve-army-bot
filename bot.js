@@ -529,6 +529,32 @@ async function lineaCasual(cfg, ev) {
 /** Arma los avisos de una partida para los jugadores registrados presentes. */
 // soloPara: cuando se canta la partida de uno solo (el que estaba en privado).
 // Los demas ya se avisaron por la via normal y volver a contarlos les mueve el total.
+// Lo que el bot ya canto y la liga todavia no publico. Se vacia solo: cuando
+// llega una publicacion que ya los incluye, dejan de hacer falta.
+let avisados = [];
+
+function recordarAviso(ev) {
+  if (!ev || ev.modo === "casual" || !ev.accountId) return;
+  if (avisados.some((a) => a.matchId === ev.matchId && a.accountId === ev.accountId)) return;
+  avisados.push({ matchId: ev.matchId, accountId: ev.accountId, modo: ev.modo,
+                  puntos: ev.puntos, inicio: ev.inicio || 0 });
+}
+
+/** Rehace los ajustes sobre lo recien publicado, con lo que todavia no entro. */
+function rehacerAjustes(estado, ajustes) {
+  const hasta = estado.contadas_hasta || 0;
+  avisados = avisados.filter((a) => a.inicio > hasta);
+  ajustes.clear();
+  ajustes.set("_generado", estado.generado);
+  const publicados = new Map(estado.jugadores.map((j) => [j.account_id, j]));
+  for (const a of [...avisados].sort((x, y) => x.inicio - y.inicio)) {
+    const clave = `${a.modo}:${a.accountId}`;
+    const publicado = (publicados.get(a.accountId) || {})[a.modo] || 0;
+    const actual = publicado + (ajustes.get(clave) || 0);
+    ajustes.set(clave, Math.max(0, actual + a.puntos) - publicado);
+  }
+}
+
 function eventosDePartida(cfg, estado, detalle, matchId, ajustes, soloPara = null) {
   const jugadores = new Map(estado.jugadores.map((j) => [j.account_id, j]));
   const lobby = detalle.lobby_type;
@@ -567,6 +593,8 @@ function eventosDePartida(cfg, estado, detalle, matchId, ajustes, soloPara = nul
         modo,
         juego,
         matchId,
+        accountId: p.account_id,
+        inicio,
         nombre: jugadores.get(p.account_id).nombre,
         gano,
         puntos,
@@ -905,6 +933,7 @@ async function avisarVistasPendientes(cfg, estado, grupoId, ajustes, vistas, cal
 
     for (const { ev, total } of
          eventosDePartida(cfg, estado, detalle, v.matchId, ajustes, v.accountId)) {
+      recordarAviso(ev);
       const texto = await lineaEvento(cfg, ev, total);
       log(texto);
       if (grupoId) {
@@ -2337,8 +2366,7 @@ async function pasada(cfg, grupoId, vistas, ajustes, primera) {
     return 0;
   }
   if (ajustes.get("_generado") !== estado.generado) {
-    ajustes.clear();
-    ajustes.set("_generado", estado.generado);
+    rehacerAjustes(estado, ajustes);
   }
 
   if (!primera) {
@@ -2438,6 +2466,7 @@ async function pasada(cfg, grupoId, vistas, ajustes, primera) {
     }
     if (!detalle) continue;
     for (const { ev, total } of eventosDePartida(cfg, estado, detalle, matchId, ajustes)) {
+      recordarAviso(ev);
       const texto = await lineaEvento(cfg, ev, total);
       log(texto);
       if (grupoId) {
