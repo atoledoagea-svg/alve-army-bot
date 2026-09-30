@@ -1311,7 +1311,8 @@ async function textoPromedios(cfg) {
   const partes = ["\u2693 *MUERTES POR PARTIDA*", ""];
   lista.forEach((f, i) => {
     const marca = i === 0 ? "\u2693" : `${i + 1}.`;
-    partes.push(`${marca} ${f.nombre}: *${f.promedio}* (${f.muertes} en ${f.pj})`);
+    // siempre con un decimal: 9 se lee peor que 9.0 en una lista
+    partes.push(`${marca} ${f.nombre}: *${Number(f.promedio).toFixed(1)}* (${f.muertes} en ${f.pj})`);
   });
   partes.push("", "El ancla del mes es el primero con 10 partidas o mas.");
   return partes.join("\n");
