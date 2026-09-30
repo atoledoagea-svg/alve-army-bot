@@ -1301,6 +1301,22 @@ async function textoMedallas(cfg) {
 }
 
 /** El ranking de cagones: los que juegan turbos y normales en vez de ranked. */
+/** Las muertes por partida de todos, de mayor a menor. */
+async function textoPromedios(cfg) {
+  const estado = await traerEstado(cfg);
+  const lista = estado.promedios || [];
+  if (!lista.length) {
+    return "Todavia no hay partidas este mes.";
+  }
+  const partes = ["\u2693 *MUERTES POR PARTIDA*", ""];
+  lista.forEach((f, i) => {
+    const marca = i === 0 ? "\u2693" : `${i + 1}.`;
+    partes.push(`${marca} ${f.nombre}: *${f.promedio}* (${f.muertes} en ${f.pj})`);
+  });
+  partes.push("", "El ancla del mes es el primero con 10 partidas o mas.");
+  return partes.join("\n");
+}
+
 /** Quienes tienen las partidas en privado: la liga no les puede contar nada. */
 async function textoPrivados(cfg) {
   const estado = await traerEstado(cfg);
@@ -1651,6 +1667,7 @@ const DICHOS = {
   cagones: textoCagones,
   cagon: (cfg) => textoCagones(cfg, true),   // solo el primero
   privados: textoPrivados,
+  promedios: textoPromedios,
   ancla: textoAncla,
   tabla: textoTabla,
   duplas: textoDuplas,
@@ -1792,6 +1809,9 @@ function escucharPreguntas(sock, cfg, grupoId) {
         } else if (texto.startsWith("!medallas") || texto.startsWith("!rangos")) {
           log("comando: !medallas");
           await sock.sendMessage(grupoId, { text: await textoMedallas(cfg) });
+        } else if (texto.startsWith("!promedios") || texto.startsWith("!promedio")) {
+          log("comando: !promedios");
+          await sock.sendMessage(grupoId, { text: await textoPromedios(cfg) });
         } else if (texto.startsWith("!privados") || texto.startsWith("!privado")) {
           log("comando: !privados");
           await sock.sendMessage(grupoId, { text: await textoPrivados(cfg) });
@@ -2018,6 +2038,7 @@ const AYUDA =
   "*!premios* - los premios del ultimo mes\n" +
   "*!duplas* - las mejores y peores parejas\n" +
   "*!ancla* - el que mas se hunde este mes\n" +
+  "*!promedios* - muertes por partida de todos\n" +
   "*!muro* - quien esta en el muro de la verguenza\n" +
   "*!cagones* - los que le escapan a la ranked\n" +
   "*!privados* - quien tiene las partidas en privado\n" +
