@@ -30,7 +30,17 @@ async function revisar(dir, log) {
   await correr("git", ["fetch", "--quiet"], dir);
   const aqui = await correr("git", ["rev-parse", "HEAD"], dir);
   const alla = await correr("git", ["rev-parse", "@{u}"], dir);
-  if (!aqui || !alla || aqui === alla) return false;
+  if (!aqui) {
+    log("actualizacion: no pude preguntarle a git en que version estoy. " +
+        "Puede que git no este instalado o que esta carpeta no sea el repo.");
+    return false;
+  }
+  if (!alla) {
+    log("actualizacion: esta rama no sabe de donde bajar (le falta el remoto). " +
+        "Se arregla en esa PC con: git branch --set-upstream-to=origin/main main");
+    return false;
+  }
+  if (aqui === alla) return false;
 
   log("actualizacion: hay una version nueva del bot, bajandola...");
   const lockAntes = leerLock(dir);
