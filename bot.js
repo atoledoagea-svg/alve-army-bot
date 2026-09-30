@@ -1313,7 +1313,7 @@ async function textoKda(cfg) {
     const marca = MEDALLAS[i] || `${i + 1}.`;
     partes.push(`${marca} ${f.nombre}: *${Number(f.kda).toFixed(2)}* (${f.k}/${f.d}/${f.a} en ${f.pj})`);
   });
-  partes.push("", "Kills mas asistencias, dividido las muertes. Desde 10 partidas.");
+  partes.push("", "Kills mas asistencias, dividido las muertes. Desde 30 partidas en el mes.");
   return partes.join("\n");
 }
 
