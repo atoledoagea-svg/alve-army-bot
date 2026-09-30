@@ -1533,8 +1533,15 @@ async function revisarPuntero(cfg, estado, grupoId, callado) {
 
 /** Si cambio el que va primero en el ancla, lo canta en el grupo. */
 async function revisarAncla(cfg, estado, grupoId, callado) {
-  const lider = (estado.ancla || [])[0];
+  // por promedio, no por total: el total solo premia al que mas juega
+  const lista = (estado.ancla_promedio || []).length
+    ? estado.ancla_promedio
+    : (estado.ancla || []);
+  const lider = lista[0];
   if (!lider || !lider.nombre) return 0;
+  const promedio = (f) => (f.promedio !== undefined
+    ? f.promedio
+    : (f.pj ? Math.round((f.muertes / f.pj) * 10) / 10 : 0));
 
   let antes = null;
   try {
@@ -1544,19 +1551,22 @@ async function revisarAncla(cfg, estado, grupoId, callado) {
   }
   try {
     fs.writeFileSync(ANCLA_PATH,
-      JSON.stringify({ nombre: lider.nombre, muertes: lider.muertes }), "utf8");
+      JSON.stringify({ nombre: lider.nombre, muertes: lider.muertes,
+                       promedio: promedio(lider) }), "utf8");
   } catch (e) {
     log(`no pude anotar el ancla (${e.message})`);
   }
   if (antes && antes.nombre === lider.nombre) return 0;
   if (callado && antes) return 0;   // sin novedad al arrancar
 
+  const suyo = promedio(lider);
+  const cola = `El que mas muere por partida, con 10 partidas o mas.`;
+  const deAntes = antes && antes.promedio !== undefined
+    ? ` (${antes.promedio} por partida)` : "";
   const texto = antes
-    ? `\u2693 *NUEVA ANCLA DEL MES*: ${lider.nombre} con ${lider.muertes} muertes\n` +
-      `Le saco el puesto a ${antes.nombre} (${antes.muertes} muertes)\n` +
-      `El que mas muere en el mes, contando todas las partidas.`
-    : `\u2693 *EL ANCLA DEL MES*: ${lider.nombre} con ${lider.muertes} muertes\n` +
-      `El que mas muere en el mes, contando todas las partidas.`;
+    ? `\u2693 *NUEVA ANCLA DEL MES*: ${lider.nombre} con ${suyo} muertes por partida\n` +
+      `Le saco el puesto a ${antes.nombre}${deAntes}\n${cola}`
+    : `\u2693 *EL ANCLA DEL MES*: ${lider.nombre} con ${suyo} muertes por partida\n${cola}`;
   log(texto.replace(/\n/g, " | "));
   if (grupoId) {
     const activo = await asegurarConexion(cfg);
