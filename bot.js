@@ -19,6 +19,7 @@ const { LobbyDota, crearClienteDota } = require("./dota-lobby.js");
 const { Marcador } = require("./marcador.js");
 const { PresenciaDiscord } = require("./discord-presencia.js");
 const actualizador = require("./actualizador.js");
+const reenvio = require("./reenvio.js");
 
 const makeWASocket = baileys.default || baileys.makeWASocket;
 const { useMultiFileAuthState, DisconnectReason, fetchLatestBaileysVersion } = baileys;
@@ -1784,6 +1785,7 @@ function escucharPreguntas(sock, cfg, grupoId) {
   const disparadores = ["!jugando", "!ingame", "quien esta jugando", "quien juega", "quienes juegan"];
   sock.ev.on("messages.upsert", async (m) => {
     for (const msg of m.messages || []) {
+      await reenvio.revisar(sock, cfg, msg, m.type, log);
       if (msg.key.fromMe || msg.key.remoteJid !== grupoId) continue;
       const texto = (
         msg.message?.conversation ||
