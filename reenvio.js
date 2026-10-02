@@ -45,6 +45,22 @@ function jidDe(numero) {
   return digitos ? `${digitos}@s.whatsapp.net` : null;
 }
 
+// "No matching sessions": el que escribe cifro para unas llaves del bot que ya
+// no existen (pasa despues de volver a vincular). Si el bot le escribe primero,
+// se arma una sesion nueva y lo proximo que mande ya se puede leer.
+const yaPedido = new Map(); // jid -> ultima vez que se le pidio (ms)
+async function pedirQueLoReenvie(sock, jid, log) {
+  const ahora = Date.now();
+  if (ahora - (yaPedido.get(jid) || 0) < 10 * 60 * 1000) return;
+  yaPedido.set(jid, ahora);
+  try {
+    await sock.sendMessage(jid, { text: "No pude leer tu ultimo mensaje (problema de cifrado de WhatsApp). ¿Me lo mandas de nuevo?" });
+    log("privados: le pedi que lo reenvie (eso arma una sesion nueva)");
+  } catch (e) {
+    log(`privados: no pude pedirle que lo reenvie (${e.message})`);
+  }
+}
+
 /** Llamar con cada mensaje que llega. No hace nada con los del grupo. */
 async function revisar(sock, cfg, msg, tipo, log) {
   try {
@@ -61,7 +77,10 @@ async function revisar(sock, cfg, msg, tipo, log) {
       const tipos = msg.message ? Object.keys(msg.message).join(", ") : "ninguno";
       const stub = msg.messageStubType ? ` | stub ${msg.messageStubType} ${JSON.stringify(msg.messageStubParameters || [])}` : "";
       texto = `[sin texto legible | tipo: ${tipos}${stub}]`;
-      if (msg.messageStubType === 2) texto += "\n(WhatsApp no dejo descifrarlo en este dispositivo: miralo en el celular)";
+      if (msg.messageStubType === 2) {
+        texto += "\n(WhatsApp no dejo descifrarlo en este dispositivo)";
+        await pedirQueLoReenvie(sock, jid, log);
+      }
     }
     const cuando = new Date(((Number(msg.messageTimestamp) || 0) * 1000) || Date.now())
       .toLocaleString("es-AR", { timeZone: "America/Argentina/Buenos_Aires" });
